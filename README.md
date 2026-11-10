@@ -13,9 +13,24 @@ ecosystem, built for Windows. CLI-first, native, no ads, no telemetry.
   NPVTunnel refuses to reimplement it and imports plaintext v1 files only.
 - **Engine:** sing-box sidecar (local SOCKS5 on `127.0.0.1`, never
   LAN-exposed by default).
-- **Status:** Phase 1 build — core + CLI. GUI, TUN mode, kill switch,
-  per-process routing and the file-association installer are the next
-  milestones (see roadmap).
+- **Status:** Phase 2 build — core + CLI + **native desktop GUI**. TUN mode,
+  kill switch, per-process routing, tray icon and the file-association
+  installer are the next milestones (see roadmap).
+
+## Desktop GUI (0.2.0+)
+
+`npvtunnel-gui.exe` is the native Windows desktop client: a single exe with
+no runtime dependencies, built with egui/eframe.
+
+- Dark dashboard: one-click **Connect / Disconnect**, live status
+  (Offline / Connecting / Protected / Error), uptime and SOCKS endpoint.
+- Profile library with import via **file dialog or share link** — every
+  import shows the security card (lock type, signature, expiry, TLS
+  warnings) before anything is added.
+- Passphrase-locked, signed **exports** straight from the library.
+- Engine diagnostics (vault, identity, sing-box location) and an activity log.
+- The GUI and the CLI share the same vault and the same sing-box sidecar:
+  either surface can pick up a tunnel the other started.
 
 ## Tech stack
 
@@ -120,16 +135,17 @@ Re-export such configs as v2 containers ( creators: `npvtunnel export`).
 ```text
 crates/npvt-core   profiles, URI import, .npvt v2 container, vault, engine glue
 crates/npvt-cli    the npvtunnel binary
+crates/npvt-gui    the npvtunnel-gui desktop client (egui/eframe)
 ```
 
 ## Roadmap
 
 | Phase | Scope |
 |-------|-------|
-| P1 (this) | Core + CLI: import/export/lock/share/list/connect, v2 crypto, vault, sing-box sidecar |
-| P2 | Tray-first GUI, wintun TUN mode, kill switch, per-process routing, .npvt file association |
-| P3 | Hardening: fuzzing, threat-model review, signed updater, AV pre-submissions |
-| P4/P5 | Seller closed beta, performance budgets, GA channels (winget/MSI) |
+| P1 (done) | Core + CLI: import/export/lock/share/list/connect, v2 crypto, vault, sing-box sidecar |
+| P2 (this) | Native Windows GUI: dashboard, library, import/export, diagnostics |
+| P2.5 | Tray icon, .npvt file association, autostart |
+| P3 | TUN mode, kill switch, per-process routing |
 
 ## License
 

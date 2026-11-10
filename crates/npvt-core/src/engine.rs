@@ -10,6 +10,7 @@
 //! - profiles that are not yet wired to an engine sidecar fail with a clear
 //!   roadmap message instead of silently downgrading security.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -201,6 +202,52 @@ pub fn work_dir() -> Result<PathBuf> {
     let dir = base.join("npvtunnel");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+/// Engine handle persisted across CLI and GUI invocations so both surfaces
+/// agree on the single running engine.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PidFile {
+    /// OS process id of the sidecar.
+    pub pid: u32,
+    /// Id of the connected profile.
+    pub profile_id: String,
+    /// Display name of the connected profile.
+    pub name: String,
+    /// Local SOCKS5 port.
+    pub socks_port: u16,
+    /// Unix start time.
+    pub started: u64,
+}
+
+/// Path of the engine pid file inside the work directory.
+pub fn pid_file_path() -> Result<PathBuf> {
+    Ok(work_dir()?.join("engine.pid"))
+}
+
+/// Load the engine pid file, if present and parseable.
+pub fn read_pid_file() -> Result<Option<PidFile>> {
+    let path = pid_file_path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&path)?;
+    let pf: PidFile = serde_json::from_slice(&bytes)
+        .map_err(|e| Error::Engine(format!("corrupt pid file: {e}")))?;
+    Ok(Some(pf))
+}
+
+/// Persist the engine pid file.
+pub fn write_pid_file(pf: &PidFile) -> Result<()> {
+    std::fs::write(pid_file_path()?, serde_json::to_vec(pf)?)?;
+    Ok(())
+}
+
+/// Remove the pid file (best effort; missing files are fine).
+pub fn clear_pid_file() {
+    if let Ok(path) = pid_file_path() {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Locate the sing-box binary: explicit path, next to our own executable,

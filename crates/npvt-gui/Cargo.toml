@@ -1,0 +1,23 @@
+[package]
+name = "npvt-gui"
+description = "npvtunnel - NPVTunnel native desktop client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "npvtunnel-gui"
+path = "src/main.rs"
+
+[dependencies]
+ed25519-dalek = "2"
+eframe = "0.37"
+egui = "0.37"
+image = { version = "0.25", default-features = false, features = ["png"] }
+npvt-core = { path = "../npvt-core" }
+rfd = "0.18"
+zeroize = "1"
