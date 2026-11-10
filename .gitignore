@@ -1,0 +1,11 @@
+/target
+Cargo.lock.bak
+*.json.tmp
+engine.json
+engine.pid
+engine.log
+vault.json
+*.npvt
+*.npvs
+*.npvt2
+/dist

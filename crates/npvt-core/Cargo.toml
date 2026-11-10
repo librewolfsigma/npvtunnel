@@ -1,0 +1,27 @@
+[package]
+name = "npvt-core"
+description = "Core library for NPVTunnel: profiles, URI import, the .npvt v2 container, vault and engine config generation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+argon2 = "0.5"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+dirs = "5"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hkdf = "0.12"
+percent-encoding = "2"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+thiserror = "2"
+url = "2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
