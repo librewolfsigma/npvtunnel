@@ -117,7 +117,7 @@ Re-export such configs as v2 containers ( creators: `npvtunnel export`).
 
 ## Workspace layout
 
-```
+```text
 crates/npvt-core   profiles, URI import, .npvt v2 container, vault, engine glue
 crates/npvt-cli    the npvtunnel binary
 ```
