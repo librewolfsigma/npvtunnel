@@ -230,8 +230,7 @@ impl NpvtApp {
                     let tail = self.engine_log_tail(12);
                     engine::clear_pid_file();
                     let message = format!(
-                        "the engine stopped unexpectedly (it may have been stopped \
-                         outside the app, or the connection dropped hard).\n\n{tail}"
+                        "the engine stopped unexpectedly (it may have been stopped outside the app, or the connection dropped hard).\n\n{tail}"
                     );
                     self.log("engine stopped unexpectedly");
                     self.engine_state = EngineState::Failed { message };
@@ -298,9 +297,7 @@ impl NpvtApp {
         engine::write_config(&cfg, &cfg_path)?;
         let bin = engine::find_engine_binary(self.engine_path.as_deref()).ok_or_else(|| {
             Error::Engine(
-                "sing-box was not found. Put sing-box.exe next to npvtunnel-gui.exe, \
-                 in the npvtunnel data folder under bin\\, or on PATH (Settings shows \
-                 what was checked). Download: https://github.com/SagerNet/sing-box/releases"
+                "sing-box was not found. Put sing-box.exe next to npvtunnel-gui.exe, in the npvtunnel data folder under bin\\, or on PATH (Settings shows what was checked). Download: https://github.com/SagerNet/sing-box/releases"
                     .into(),
             )
         })?;

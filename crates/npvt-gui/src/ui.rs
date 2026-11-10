@@ -270,9 +270,7 @@ fn dashboard(app: &mut NpvtApp, ui: &mut egui::Ui) {
             ui,
             WARN,
             "sing-box engine missing",
-            "The connect engine was not found. Place sing-box.exe next to \
-             npvtunnel-gui.exe, in the npvtunnel data folder under bin\\, or on PATH. \
-             Downloads: https://github.com/SagerNet/sing-box/releases",
+            "The connect engine was not found. Place sing-box.exe next to npvtunnel-gui.exe, in the npvtunnel data folder under bin\\, or on PATH. Downloads: https://github.com/SagerNet/sing-box/releases",
         );
     }
 
@@ -284,12 +282,8 @@ fn dashboard(app: &mut NpvtApp, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.label(RichText::new("No profiles yet").strong());
                 ui.label(
-                    RichText::new(
-                        "Import a .npvt/.npvs file or a share link to get started. \
-                         Import never connects automatically - you always see a \
-                         security card first.",
-                    )
-                    .color(MUTED),
+                    RichText::new("Import a .npvt/.npvs file or a share link to get started. Import never connects automatically - you always see a security card first.")
+                        .color(MUTED),
                 );
                 ui.add_space(4.0);
                 if ui.button("Open the Profiles tab").clicked() {
@@ -580,11 +574,8 @@ fn settings_tab(app: &mut NpvtApp, ui: &mut egui::Ui) {
                 }
                 None => {
                     ui.label(
-                        RichText::new(
-                            "No identity yet. It signs your exports and unlocks files \
-                             locked to you.",
-                        )
-                        .color(MUTED),
+                        RichText::new("No identity yet. It signs your exports and unlocks files locked to you.")
+                            .color(MUTED),
                     );
                     if ui.button("Generate identity").clicked() {
                         app.generate_identity();
@@ -655,13 +646,9 @@ fn settings_tab(app: &mut NpvtApp, ui: &mut egui::Ui) {
                 "https://github.com/librewolfsigma/npvtunnel",
             );
             ui.label(
-                RichText::new(
-                    "Closing the window keeps a running tunnel alive; disconnect first \
-                     to stop it. The engine binds 127.0.0.1 only - nothing is exposed \
-                     to the network.",
-                )
-                .small()
-                .color(MUTED),
+                RichText::new("Closing the window keeps a running tunnel alive; disconnect first to stop it. The engine binds 127.0.0.1 only - nothing is exposed to the network.")
+                    .small()
+                    .color(MUTED),
             );
         });
 }
@@ -703,8 +690,7 @@ fn import_window(app: &mut NpvtApp, ctx: &egui::Context) {
                     None => {
                         if state.lock_kind == "passphrase" {
                             ui.label(
-                                "This container is passphrase-locked. Enter the \
-                                 passphrase to see its security card.",
+                                "This container is passphrase-locked. Enter the passphrase to see its security card.",
                             );
                             let response = ui.add(
                                 egui::TextEdit::singleline(&mut state.passphrase)
@@ -775,11 +761,8 @@ fn import_window(app: &mut NpvtApp, ctx: &egui::Context) {
                             });
                         if card.profile.allow_insecure {
                             ui.label(
-                                RichText::new(
-                                    "WARNING: this config disables TLS verification \
-                                     (allow_insecure).",
-                                )
-                                .color(WARN),
+                                RichText::new("WARNING: this config disables TLS verification (allow_insecure).")
+                                    .color(WARN),
                             );
                         }
                         ui.add_space(6.0);
@@ -904,12 +887,9 @@ fn export_window(app: &mut NpvtApp, ctx: &egui::Context) {
                     }
                 });
                 ui.label(
-                    RichText::new(
-                        "The file is locked with Argon2id + XChaCha20-Poly1305 and signed \
-                         with your creator identity.",
-                    )
-                    .small()
-                    .color(MUTED),
+                    RichText::new("The file is locked with Argon2id + XChaCha20-Poly1305 and signed with your creator identity.")
+                        .small()
+                        .color(MUTED),
                 );
             }
             if pick {
