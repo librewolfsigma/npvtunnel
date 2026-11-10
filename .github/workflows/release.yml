@@ -76,4 +76,4 @@ jobs:
             --title "NPVTunnel $env:TAG" `
             --generate-notes `
             --latest
-          gh release view "$env:TAG" --json assets,name,isLatest
+          gh release view "$env:TAG" --json assets,name,tagName,url
