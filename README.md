@@ -17,6 +17,18 @@ ecosystem, built for Windows. CLI-first, native, no ads, no telemetry.
   per-process routing and the file-association installer are the next
   milestones (see roadmap).
 
+## Tech stack
+
+| Layer | Choice |
+|-------|--------|
+| Language | Rust (edition 2021, MSRV 1.85), `#![forbid(unsafe_code)]` workspace-wide |
+| CLI | `clap` 4 (derive) verb-first interface, stable exit codes, `clap_complete` shell completions |
+| Container crypto | Argon2id (64 MiB, t=3, p=4) KDF, XChaCha20-Poly1305 AEAD, X25519 multi-recipient locks, HKDF-SHA256, Ed25519 `verify_strict` signatures |
+| Vault | JSON on disk, atomic writes, Unix `0600`, `zeroize` on drop |
+| Engine | sing-box sidecar rendering vless / vmess / trojan / shadowsocks / hysteria2 / socks / http outbounds; SOCKS5 inbound bound to `127.0.0.1` |
+| Windows binary | `x86_64-pc-windows-msvc`, statically linked CRT (`+crt-static`), thin LTO, stripped |
+| CI / release | master-ci v2 (fmt, clippy, cargo-deny, cargo-machete, tests), CodeQL (rust), gitleaks, zizmor, Dependabot; tag-triggered `release.yml` publishes the Windows zip + `SHA256SUMS.txt` via the `gh` CLI |
+
 ## Build
 
 Requires Rust 1.85+ (stable).
@@ -26,8 +38,9 @@ cargo build --release
 # binary: target/release/npvtunnel(.exe)
 ```
 
-CI builds and tests the Windows x64 release binary on every push; download it
-from the workflow run artifacts (`npvtunnel-windows-x64`).
+CI builds and tests the Windows x64 release binary on every push; pushing a
+`v*` tag publishes a GitHub Release with `npvtunnel-windows-x64-<tag>.zip`
+and a `SHA256SUMS.txt` checksum file.
 
 ## Quick start
 
@@ -77,6 +90,23 @@ Exit codes are stable: `0` ok, `1` usage, `2` config, `3` network/engine,
   master-ci secrets scanner.
 
 See [SECURITY.md](SECURITY.md) for reporting policy and hardening notes.
+
+## Troubleshooting (Windows)
+
+- **A console window flashes and disappears when I double-click
+  `npvtunnel.exe`.** That is not a crash: npvtunnel is a command-line tool and
+  the window closes as soon as the program finishes. Since 0.1.1 a
+  double-click shows a quick-start screen and waits for Enter. Run the
+  commands from the quick start above in PowerShell or Windows Terminal.
+- **`VCRUNTIME140.dll was not found`.** Fixed since 0.1.1: the release
+  binary statically links the C runtime and has no redistributable
+  dependency. Use the latest release zip.
+- **`connect` says the sing-box binary was not found.** Put `sing-box.exe`
+  next to `npvtunnel.exe`, or in `%APPDATA%\npvtunnel\bin\`, or on `PATH`.
+  `npvtunnel doctor` shows exactly what was checked.
+- **SmartScreen warns about an unsigned binary.** Choose "More info" then
+  "Run anyway", and verify the zip against `SHA256SUMS.txt`. Authenticode
+  signing is on the P3 roadmap (see SECURITY.md).
 
 ## Legacy v1 files
 

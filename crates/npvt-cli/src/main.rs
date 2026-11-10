@@ -14,9 +14,10 @@
 
 #![forbid(unsafe_code)]
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Duration;
 
 use base64::Engine as _;
 use clap::{CommandFactory, Parser, Subcommand};
@@ -175,6 +176,18 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    install_panic_hook();
+    // Double-click UX: with no arguments clap would print a usage error and
+    // exit instantly, so a Windows console window would flash and disappear
+    // and the launch would look like a crash. Show a friendly quick-start
+    // screen instead and keep the window open.
+    if interactive_no_args() {
+        print_welcome();
+        if cfg!(windows) {
+            pause_for_window_close();
+        }
+        return ExitCode::SUCCESS;
+    }
     let cli = Cli::parse();
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -183,6 +196,74 @@ fn main() -> ExitCode {
             ExitCode::from(exit_code_for(&err))
         }
     }
+}
+
+/// True when the process was launched with no arguments from an interactive
+/// console - the Windows Explorer double-click scenario.
+fn interactive_no_args() -> bool {
+    std::env::args_os().count() == 1
+        && std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+}
+
+/// Print a plain ASCII quick-start screen for double-click launches.
+fn print_welcome() {
+    println!(
+        "NPVTunnel v{} - security-hardened .npvt tunnel client",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!();
+    println!("Nothing is wrong - npvtunnel is a command-line tool. Windows opens");
+    println!("a console for it and closes the window as soon as it finishes.");
+    println!("To use it, open PowerShell or Windows Terminal and run:");
+    println!();
+    println!("  npvtunnel doctor                     check your setup");
+    println!("  npvtunnel import <file-or-link>      add a profile (security card first)");
+    println!("  npvtunnel list                       show the library");
+    println!("  npvtunnel connect <name>             connect (SOCKS5 127.0.0.1:2080)");
+    println!("  npvtunnel --help                     all commands");
+    println!();
+    println!("The connect command needs the sing-box engine (sing-box.exe), either");
+    println!("next to npvtunnel.exe, in the npvtunnel data folder under bin\\, or");
+    println!("on PATH. Downloads: https://github.com/SagerNet/sing-box/releases");
+}
+
+/// Keep a double-clicked console window open long enough to be read.
+fn pause_for_window_close() {
+    let _ = std::io::stdout().flush();
+    eprintln!();
+    eprint!("Press Enter to close this window...");
+    let _ = std::io::stdout().flush();
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+}
+
+/// Replace the default panic output with a clean, reportable message; keep
+/// the window open when the panic can only have been seen by double-click.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let payload = info.payload();
+        let message = if let Some(s) = payload.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic".to_string()
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        eprintln!();
+        eprintln!("npvtunnel hit an unexpected internal error and must close.");
+        eprintln!("  what : {message}");
+        eprintln!("  where: {location}");
+        eprintln!("This is a bug, not a problem with your configs. Please report it:");
+        eprintln!("  https://github.com/librewolfsigma/npvtunnel/issues");
+        if interactive_no_args() && cfg!(windows) {
+            pause_for_window_close();
+        }
+    }));
 }
 
 fn exit_code_for(err: &Error) -> u8 {
@@ -403,7 +484,11 @@ fn decode_container(
             let v = d.verification.clone();
             (d, v)
         }
-        other => unreachable!("peek_lock returns a fixed set, got {other}"),
+        other => {
+            return Err(Error::InvalidConfig(format!(
+                "container uses an unsupported lock kind '{other}'"
+            )))
+        }
     };
     if decoded.policy.is_expired(unix_now()) {
         return Err(Error::InvalidConfig(
@@ -420,9 +505,9 @@ fn decode_container(
 
 fn print_security_card(incoming: &DecodedIncoming, verification: &v2::Verification) -> Result<()> {
     let p = &incoming.profile;
-    println!("─────────────────────────────────────────────");
+    println!("---------------------------------------------");
     println!(" Security card");
-    println!("─────────────────────────────────────────────");
+    println!("---------------------------------------------");
     println!(" name        : {}", p.name);
     println!(
         " protocol    : {} ({})",
@@ -464,7 +549,7 @@ fn print_security_card(incoming: &DecodedIncoming, verification: &v2::Verificati
     if p.allow_insecure {
         println!(" WARNING     : this config disables TLS verification (allow_insecure)");
     }
-    println!("─────────────────────────────────────────────");
+    println!("---------------------------------------------");
     Ok(())
 }
 
@@ -474,7 +559,7 @@ fn unique_name(data: &VaultData, wanted: &str) -> String {
         return wanted.to_string();
     }
     loop {
-        let candidate = format!("{wanted} · {}", short_suffix());
+        let candidate = format!("{wanted} - {}", short_suffix());
         if !clash(&candidate) {
             return candidate;
         }
@@ -904,6 +989,17 @@ fn cmd_connect(
     })?;
 
     let running = engine::start(&bin, &cfg_path, &workdir.join("engine.log"))?;
+    // Give the engine a moment, then verify it is still alive: a malformed
+    // config or a port conflict would otherwise die silently right after a
+    // "tunnel up" message.
+    std::thread::sleep(Duration::from_millis(600));
+    if !engine::alive(running.pid) {
+        let tail = engine::log_tail(&workdir.join("engine.log"), 20);
+        return Err(Error::Engine(format!(
+            "sing-box exited immediately after start; last engine log lines:\n{tail}\n(engine config: {})\n(run 'npvtunnel doctor' to check the engine setup)",
+            cfg_path.display()
+        )));
+    }
     let pf = PidFile {
         pid: running.pid,
         profile_id: profile.id.clone(),

@@ -1,0 +1,5 @@
+# Windows release builds statically link the C runtime so npvtunnel.exe is
+# self-contained: no VCRUNTIME140.dll / VC++ redistributable requirement on
+# user machines (a dynamic CRT made the exe fail to start on some systems).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

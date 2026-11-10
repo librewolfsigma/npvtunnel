@@ -284,10 +284,18 @@ pub fn alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
+        // Match the pid as an exact quoted CSV field of the tasklist row, so
+        // a substring of another column (e.g. a memory figure) can never be
+        // mistaken for a running process.
+        let needle = format!("\"{pid}\"");
         std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
             .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .any(|line| line.contains(&needle))
+            })
             .unwrap_or(false)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
@@ -322,6 +330,20 @@ pub fn stop(pid: u32) -> Result<()> {
     Ok(())
 }
 
+/// Read the last `max_lines` lines of a log file for error reports; the
+/// file may be unreadable or contain invalid UTF-8, which is not fatal here.
+pub fn log_tail(path: &Path, max_lines: usize) -> String {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            let lines: Vec<&str> = text.lines().collect();
+            let start = lines.len().saturating_sub(max_lines);
+            lines[start..].join("\n")
+        }
+        Err(_) => "(engine log not readable)".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +365,22 @@ mod tests {
             group: None,
             created_at: 1_700_000_000,
         }
+    }
+
+    #[test]
+    fn log_tail_returns_last_lines_only() {
+        let dir = std::env::temp_dir().join(format!("npvt-tail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("tail.log");
+        std::fs::write(&path, "l1\nl2\nl3\n").expect("write log");
+        assert_eq!(log_tail(&path, 2), "l2\nl3");
+        assert_eq!(log_tail(&path, 10), "l1\nl2\nl3");
+        assert_eq!(
+            log_tail(&dir.join("missing.log"), 2),
+            "(engine log not readable)"
+        );
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
