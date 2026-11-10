@@ -20,6 +20,8 @@ on:
 jobs:
   master:
     uses: WasewaseX/master-ci/.github/workflows/master-ci.yml@v2
+    with:
+      template_ref: v2
     permissions:
       contents: read
       security-events: write
@@ -63,6 +65,9 @@ jobs:
 
   codeql:
     uses: WasewaseX/master-ci/.github/workflows/codeql.yml@v2
+    with:
+      languages: rust
+      template_ref: v2
     permissions:
       contents: read
       security-events: write
