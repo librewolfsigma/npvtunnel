@@ -1,0 +1,79 @@
+# Release pipeline: compile the Windows binary and publish a GitHub Release.
+#
+# Triggered by pushing a v* tag (and manually via workflow_dispatch).
+# First-party steps only: the release is created with the preinstalled `gh`
+# CLI against the automatic GITHUB_TOKEN, so no third-party release action
+# enters the supply chain. The tag must match the workspace version
+# (tag v0.1.0 <-> Cargo.toml version 0.1.0).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: build and publish windows-x64
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Verify tag matches crate version
+        shell: pwsh
+        run: |
+          $crateVersion = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"$' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          $tagVersion = $env:TAG -replace '^v', ''
+          if ($crateVersion -ne $tagVersion) {
+            Write-Error "tag $env:TAG does not match crate version $crateVersion"
+            exit 1
+          }
+
+      - name: Build release binary
+        run: cargo build --locked --release
+
+      - name: Run tests (release)
+        run: cargo test --locked --release
+
+      - name: Package release artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/npvtunnel.exe dist/
+          Copy-Item README.md dist/
+          Copy-Item LICENSE dist/
+          Copy-Item SECURITY.md dist/
+          Compress-Archive -Path dist/* -DestinationPath "npvtunnel-windows-x64-$env:TAG.zip" -Force
+          $hash = (Get-FileHash "npvtunnel-windows-x64-$env:TAG.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  npvtunnel-windows-x64-$env:TAG.zip" | Out-File -Encoding ascii SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:TAG" `
+            "npvtunnel-windows-x64-$env:TAG.zip" `
+            "SHA256SUMS.txt" `
+            --title "NPVTunnel $env:TAG" `
+            --generate-notes `
+            --latest
+          gh release view "$env:TAG" --json assets,name,isLatest
