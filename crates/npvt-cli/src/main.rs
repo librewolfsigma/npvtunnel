@@ -45,10 +45,7 @@ const MAX_IMPORT_FILE: usize = v2::MAX_CONTAINER_LEN;
     name = "npvtunnel",
     version,
     about = "Lightweight, security-hardened .npvt tunnel client for Windows",
-    long_about = "NPVTunnel: a lightweight, security-hardened client for the .npvt config \
-                  ecosystem. Import .npvt/.npvs files and share links, keep them in a local \
-                  vault, export cryptographically-locked v2 containers, and run tunnels \
-                  through a sing-box sidecar."
+    long_about = "NPVTunnel: a lightweight, security-hardened client for the .npvt config ecosystem. Import .npvt/.npvs files and share links, keep them in a local vault, export cryptographically-locked v2 containers, and run tunnels through a sing-box sidecar."
 )]
 struct Cli {
     /// Override the vault path (default: OS data directory).
