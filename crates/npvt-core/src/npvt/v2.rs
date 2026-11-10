@@ -7,8 +7,9 @@
 //!                 | header (canonical JSON, UTF-8)   | payload blob
 //! ```
 //!
-//! - **Passphrase lock**: Argon2id (default m=64 MiB, t=3, p=4) to a 32-byte
-//!   key, XChaCha20-Poly1305 AEAD over the JSON payload; AAD = canonical
+//! - **Passphrase lock**: Argon2id (default m=64 MiB, t=3, p=4) stretches
+//!   the passphrase into an XChaCha20-Poly1305 AEAD over the JSON payload;
+//!   AAD = canonical
 //!   header bytes with the signature cleared (and, for key locks, all slot
 //!   ciphertexts cleared).
 //! - **Key lock**: per-recipient X25519 (ephemeral sender key) -> HKDF-SHA-256

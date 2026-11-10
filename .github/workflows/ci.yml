@@ -11,6 +11,9 @@
 #  3. `codeql` - security analysis, results to the Security tab.
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -32,6 +35,8 @@ jobs:
     name: windows-x64 release build
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

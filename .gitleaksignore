@@ -1,0 +1,5 @@
+# False positive: the flagged line is a documentation comment describing the
+# .npvt v2 container design (an AEAD construction name after the word "key"
+# trips the generic-api-key heuristic). No secrets are committed to this
+# repository.
+0ec4068df16247b555e0706bbfdbc9795f4293c2:crates/npvt-core/src/npvt/v2.rs:generic-api-key:11
