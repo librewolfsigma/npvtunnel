@@ -397,8 +397,7 @@ fn decode_container(
                 .as_ref()
                 .ok_or_else(|| {
                     Error::Vault(
-                        "container is key-locked but no local identity exists; run \
-                         'npvtunnel keygen' first"
+                        "container is key-locked but no local identity exists; run npvtunnel keygen first"
                             .into(),
                     )
                 })?
@@ -902,8 +901,7 @@ fn cmd_connect(
 
     let bin = engine::find_engine_binary(engine_path).ok_or_else(|| {
         Error::Engine(
-            "sing-box binary not found; place it next to npvtunnel, in the npvtunnel data \
-             directory under bin/, or on PATH (npvtunnel doctor shows what was checked)"
+            "sing-box binary not found; place it next to npvtunnel, in the npvtunnel data directory under bin/, or on PATH (npvtunnel doctor shows what was checked)"
                 .into(),
         )
     })?;

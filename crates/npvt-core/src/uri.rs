@@ -151,8 +151,7 @@ pub fn parse_uri(input: &str) -> Result<Profile> {
         "vless" | "trojan" | "hysteria2" | "hy2" | "socks" | "socks5" | "socks5h" | "http"
         | "https" => parse_generic(trimmed, &scheme),
         other => Err(Error::InvalidConfig(format!(
-            "unsupported link scheme '{other}'; supported: vless, vmess, ss, trojan, hysteria2, \
-             socks, http(s), npvt"
+            "unsupported link scheme '{other}'; supported: vless, vmess, ss, trojan, hysteria2, socks, http(s), npvt"
         ))),
     }
 }

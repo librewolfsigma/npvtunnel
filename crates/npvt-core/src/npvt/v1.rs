@@ -59,9 +59,7 @@ pub fn import_best_effort(bytes: &[u8]) -> Result<Profile> {
     }
     if !probe.looks_plaintext_json {
         return Err(Error::V1Unsupported(
-            "the file is locked with the legacy v1 obfuscation; locked v1 files are not decoded \
-             by NPVTunnel (the v1 lock is broken obfuscation) - re-export as a v2 container or \
-             ask the creator for an npvt:// link"
+            "the file is locked with the legacy v1 obfuscation; locked v1 files are not decoded by NPVTunnel (the v1 lock is broken obfuscation) - re-export as a v2 container or ask the creator for an npvt:// link"
                 .into(),
         ));
     }
