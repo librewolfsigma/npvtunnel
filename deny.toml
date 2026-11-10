@@ -1,5 +1,8 @@
 # cargo-deny policy for NPVTunnel.
-# CI runs `cargo deny check advisories licenses sources` per crate.
+#
+# master-ci runs `cargo deny check` inside every crate directory and only
+# materializes its default config when the crate has no deny.toml - so this
+# policy is deliberately duplicated at the root and in each crate.
 
 [advisories]
 version = 2
