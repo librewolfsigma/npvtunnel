@@ -47,19 +47,32 @@ jobs:
             exit 1
           }
 
-      - name: Build release binary
+      - name: Build release binaries
         run: cargo build --locked --release
 
       - name: Run tests (release)
         run: cargo test --locked --release
 
+      - name: Fetch bundled sing-box engine
+        shell: pwsh
+        env:
+          SING_BOX_VERSION: "1.14.4"
+        run: |
+          $url = "https://github.com/SagerNet/sing-box/releases/download/v$env:SING_BOX_VERSION/sing-box-$env:SING_BOX_VERSION-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile sing-box-bundle.zip
+          Expand-Archive -Path sing-box-bundle.zip -DestinationPath sing-box-tmp
+          $exe = Get-ChildItem -Recurse -Path sing-box-tmp -Filter sing-box.exe | Select-Object -First 1
+          if (-not $exe) { Write-Error "sing-box.exe not found in the engine archive"; exit 1 }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $exe.FullName dist/sing-box.exe
+
       - name: Package release artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/NPVTunnel.exe dist/
-          Copy-Item target/release/npvtunnel.exe dist/
-          Copy-Item README.md dist/
+          Copy-Item target/release/npvt-cli.exe dist/
+          Copy-Item assets/README-windows.txt dist/
+          Copy-Item assets/THIRD-PARTY-LICENSES.txt dist/
           Copy-Item LICENSE dist/
           Copy-Item SECURITY.md dist/
           Compress-Archive -Path dist/* -DestinationPath "npvtunnel-windows-x64-$env:TAG.zip" -Force

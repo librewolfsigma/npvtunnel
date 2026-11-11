@@ -9,7 +9,7 @@ ecosystem, built for Windows. Native GUI, no ads, no telemetry.
   downlink/uplink), CONFIGS (groups, pings, usage, import), LOGS
   (live engine output) and MORE (appearance, keys, per-app proxy,
   points, settings, geo assets).
-- **CLI (`npvtunnel`):** the same vault from a terminal - import, export,
+- **CLI (`npvt-cli.exe`):** the same vault from a terminal - import, export,
   lock, share, list, connect.
 - **File experience:** `.npvt` / `.npvs` files and `npvt://` links import
   through a security card; the default action is *add to library*, never
@@ -82,8 +82,8 @@ Exit codes are stable: `0` ok, `1` usage, `2` config, `3` network/engine,
 ## GUI quick start
 
 1. Download `npvtunnel-windows-x64-<tag>.zip` from the Releases page and
-   unzip it next to `sing-box.exe` (from the
-   [sing-box releases](https://github.com/SagerNet/sing-box/releases)).
+   unzip it anywhere - `sing-box.exe` ships inside the zip next to
+   `NPVTunnel.exe`, so it works out of the box.
 2. Double-click `NPVTunnel.exe`. No console window appears - the binary is a
    GUI-subsystem executable and every helper process it spawns is created
    with `CREATE_NO_WINDOW`.

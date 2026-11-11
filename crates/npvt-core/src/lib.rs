@@ -20,6 +20,7 @@ pub mod error;
 pub mod npvt;
 pub mod profile;
 pub mod redact;
+pub mod session;
 pub mod uri;
 pub mod vault;
 

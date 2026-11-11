@@ -1,4 +1,4 @@
-//! `npvtunnel` — the NPVTunnel command line client.
+//! `npvt-cli` — the NPVTunnel command line client.
 //!
 //! Verb-first CLI (see the concept blueprint, Section 7). Security rules the
 //! CLI enforces:
@@ -27,7 +27,8 @@ use npvt_core::engine::{self, DEFAULT_SOCKS_PORT};
 use npvt_core::error::ErrorClass;
 use npvt_core::npvt::v1;
 use npvt_core::npvt::v2::{self, Lock, Policy, Unlock};
-use npvt_core::profile::{unix_now, Credential, Profile};
+use npvt_core::profile::{parse_expires, unix_now, Credential, Profile};
+use npvt_core::session::{self, Session};
 use npvt_core::uri::{parse_import, ImportSource};
 use npvt_core::vault::{
     clean_name_input, find_profile, generate_identity, remove_profile, short_suffix,
@@ -43,7 +44,7 @@ const MAX_IMPORT_FILE: usize = v2::MAX_CONTAINER_LEN;
 
 #[derive(Parser)]
 #[command(
-    name = "npvtunnel",
+    name = "npvt-cli",
     version,
     about = "Lightweight, security-hardened .npvt tunnel client for Windows",
     long_about = "NPVTunnel: a lightweight, security-hardened client for the .npvt config ecosystem. Import .npvt/.npvs files and share links, keep them in a local vault, export cryptographically-locked v2 containers, and run tunnels through a sing-box sidecar."
@@ -217,10 +218,10 @@ fn print_welcome() {
     println!("a console for it and closes the window as soon as it finishes.");
     println!("To use it, open PowerShell or Windows Terminal and run:");
     println!();
-    println!("  npvtunnel doctor                     check your setup");
-    println!("  npvtunnel import <file-or-link>      add a profile (security card first)");
+    println!("  npvt-cli doctor                     check your setup");
+    println!("  npvt-cli import <file-or-link>      add a profile (security card first)");
     println!("  npvtunnel list                       show the library");
-    println!("  npvtunnel connect <name>             connect (SOCKS5 127.0.0.1:2080)");
+    println!("  npvt-cli connect <name>             connect (SOCKS5 127.0.0.1:2080)");
     println!("  npvtunnel --help                     all commands");
     println!();
     println!("The connect command needs the sing-box engine (sing-box.exe), either");
@@ -475,7 +476,7 @@ fn decode_container(
                 .as_ref()
                 .ok_or_else(|| {
                     Error::Vault(
-                        "container is key-locked but no local identity exists; run npvtunnel keygen first"
+                        "container is key-locked but no local identity exists; run npvt-cli keygen first"
                             .into(),
                     )
                 })?
@@ -663,80 +664,13 @@ fn cmd_import(
         profile.port
     );
     println!(
-        "Default action is add-to-library; run 'npvtunnel connect {}' to connect.",
+        "Default action is add-to-library; run 'npvt-cli connect {}' to connect.",
         profile.name
     );
     Ok(())
 }
 
 // ── export ──────────────────────────────────────────────────────────────────
-
-fn parse_expires(spec: &str) -> Result<u64> {
-    let now = unix_now();
-    if let Some(days) = spec.strip_prefix('+') {
-        let days: u64 = days
-            .strip_suffix('d')
-            .unwrap_or(days)
-            .parse()
-            .map_err(|_| Error::InvalidConfig("expiry must be YYYY-MM-DD or +Nd".into()))?;
-        if days > 3650 {
-            return Err(Error::InvalidConfig("expiry longer than 10 years".into()));
-        }
-        return Ok(now + days * 86_400);
-    }
-    let parts: Vec<&str> = spec.split('-').collect();
-    if parts.len() != 3 {
-        return Err(Error::InvalidConfig(
-            "expiry must be YYYY-MM-DD or +Nd".into(),
-        ));
-    }
-    let year: i64 = parts[0]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad year".into()))?;
-    let month: u32 = parts[1]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad month".into()))?;
-    let day: u32 = parts[2]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad day".into()))?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(Error::InvalidConfig("bad date".into()));
-    }
-    let leap = |y: i64| (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let dim = [
-        31,
-        if leap(year) { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ][(month - 1) as usize];
-    if day > dim {
-        return Err(Error::InvalidConfig("bad day of month".into()));
-    }
-    // Days-from-civil (Hinnant), valid for years >= 1970 here.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = ((month + 9) % 12) as i64;
-    let doy = (153 * mp + 2) / 5 + day as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    if days < 0 {
-        return Err(Error::InvalidConfig("date is before 1970".into()));
-    }
-    let unix = days as u64 * 86_400;
-    if unix <= now {
-        return Err(Error::InvalidConfig("expiry must be in the future".into()));
-    }
-    Ok(unix)
-}
 
 fn parse_pubkey(spec: &str) -> Result<[u8; 32]> {
     let bytes = B64URL
@@ -767,7 +701,7 @@ fn cmd_export(
         None
     } else {
         let identity = data.identity.as_ref().ok_or_else(|| {
-            Error::Vault("export signing needs an identity; run 'npvtunnel keygen'".into())
+            Error::Vault("export signing needs an identity; run 'npvt-cli keygen'".into())
         })?;
         Some(signing_key_of(identity))
     };
@@ -857,7 +791,7 @@ fn cmd_list(cli: &Cli, json: bool, sort: &str) -> Result<()> {
         return Ok(());
     }
     if profiles.is_empty() {
-        println!("Library is empty. Try: npvtunnel import <file-or-link>");
+        println!("Library is empty. Try: npvt-cli import <file-or-link>");
         return Ok(());
     }
     for p in profiles {
@@ -940,19 +874,6 @@ fn cmd_remove(cli: &Cli, target: &str, yes: bool) -> Result<()> {
 
 // ── connect / disconnect / status ───────────────────────────────────────────
 
-#[derive(serde::Deserialize, serde::Serialize)]
-struct PidFile {
-    pid: u32,
-    profile_id: String,
-    name: String,
-    socks_port: u16,
-    started: u64,
-}
-
-fn pid_file() -> Result<PathBuf> {
-    Ok(engine::work_dir()?.join("engine.pid"))
-}
-
 fn cmd_connect(
     cli: &Cli,
     target: &str,
@@ -963,7 +884,7 @@ fn cmd_connect(
     let (_, data) = open_vault(cli)?;
     let profile = find_profile(&data, target)?.clone();
 
-    if let Some(existing) = read_pid_file()? {
+    if let Some(existing) = session::read_session()? {
         if engine::alive(existing.pid) {
             return Err(Error::Engine(format!(
                 "an engine is already running (pid {}, profile '{}'); disconnect first",
@@ -973,7 +894,13 @@ fn cmd_connect(
     }
 
     let workdir = engine::work_dir()?;
-    let cfg = engine::config(std::slice::from_ref(&profile), &profile.id, socks_port, dns)?;
+    let cfg = engine::config(
+        std::slice::from_ref(&profile),
+        &profile.id,
+        socks_port,
+        dns,
+        None,
+    )?;
     let cfg_path = workdir.join("engine.json");
     engine::write_config(&cfg, &cfg_path)?;
     log(
@@ -983,7 +910,7 @@ fn cmd_connect(
 
     let bin = engine::find_engine_binary(engine_path).ok_or_else(|| {
         Error::Engine(
-            "sing-box binary not found; place it next to npvtunnel, in the npvtunnel data directory under bin/, or on PATH (npvtunnel doctor shows what was checked)"
+            "sing-box binary not found; place it next to npvt-cli, in the npvtunnel data directory under bin/, or on PATH (npvt-cli doctor shows what was checked)"
                 .into(),
         )
     })?;
@@ -996,18 +923,17 @@ fn cmd_connect(
     if !engine::alive(running.pid) {
         let tail = engine::log_tail(&workdir.join("engine.log"), 20);
         return Err(Error::Engine(format!(
-            "sing-box exited immediately after start; last engine log lines:\n{tail}\n(engine config: {})\n(run 'npvtunnel doctor' to check the engine setup)",
+            "sing-box exited immediately after start; last engine log lines:\n{tail}\n(engine config: {})\n(run 'npvt-cli doctor' to check the engine setup)",
             cfg_path.display()
         )));
     }
-    let pf = PidFile {
+    session::write_session(&Session {
         pid: running.pid,
         profile_id: profile.id.clone(),
         name: profile.name.clone(),
         socks_port,
         started: unix_now(),
-    };
-    std::fs::write(pid_file()?, serde_json::to_vec(&pf)?).map_err(Error::Io)?;
+    })?;
 
     println!(
         "Tunnel up: '{}' ({} {}:{}) - sing-box pid {}",
@@ -1021,27 +947,16 @@ fn cmd_connect(
     Ok(())
 }
 
-fn read_pid_file() -> Result<Option<PidFile>> {
-    let path = pid_file()?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(Error::Io)?;
-    let pf: PidFile = serde_json::from_slice(&bytes)
-        .map_err(|e| Error::Engine(format!("corrupt pid file: {e}")))?;
-    Ok(Some(pf))
-}
-
 fn cmd_disconnect(cli: &Cli) -> Result<()> {
-    match read_pid_file()? {
+    match session::read_session()? {
         Some(pf) if engine::alive(pf.pid) => {
             engine::stop(pf.pid)?;
-            let _ = std::fs::remove_file(pid_file()?);
+            session::clear_session()?;
             println!("Engine stopped (pid {}).", pf.pid);
             Ok(())
         }
         Some(pf) => {
-            let _ = std::fs::remove_file(pid_file()?);
+            session::clear_session()?;
             println!("Stale pid file removed (pid {} was not running).", pf.pid);
             Ok(())
         }
@@ -1054,7 +969,7 @@ fn cmd_disconnect(cli: &Cli) -> Result<()> {
 }
 
 fn cmd_status(_cli: &Cli, json: bool) -> Result<()> {
-    let pf = read_pid_file()?;
+    let pf = session::read_session()?;
     let running = pf.as_ref().is_some_and(|p| engine::alive(p.pid));
     if json {
         let value = match (&pf, running) {
@@ -1096,7 +1011,7 @@ struct Check {
 fn cmd_doctor(cli: &Cli, json: bool) -> Result<()> {
     let mut checks: Vec<Check> = Vec::new();
 
-    let (vault, data) = match open_vault(cli) {
+    let (_vault, data) = match open_vault(cli) {
         Ok((vault, loaded)) => {
             checks.push(Check {
                 status: "pass",
@@ -1119,7 +1034,7 @@ fn cmd_doctor(cli: &Cli, json: bool) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        match std::fs::metadata(vault.path()) {
+        match std::fs::metadata(_vault.path()) {
             Ok(meta) => {
                 let mode = meta.permissions().mode();
                 if mode & 0o077 == 0 {
@@ -1154,7 +1069,7 @@ fn cmd_doctor(cli: &Cli, json: bool) -> Result<()> {
         detail: if data.identity.is_some() {
             "creator identity present".into()
         } else {
-            "no identity; run 'npvtunnel keygen' to sign exports and open key-locked files".into()
+            "no identity; run 'npvt-cli keygen' to sign exports and open key-locked files".into()
         },
     });
 
@@ -1177,11 +1092,11 @@ fn cmd_doctor(cli: &Cli, json: bool) -> Result<()> {
         None => checks.push(Check {
             status: "warn",
             name: "engine-binary",
-            detail: "sing-box not found; connect needs it (see 'npvtunnel connect --help')".into(),
+            detail: "sing-box not found; connect needs it (see 'npvt-cli connect --help')".into(),
         }),
     }
 
-    match read_pid_file() {
+    match session::read_session() {
         Ok(Some(pf)) if engine::alive(pf.pid) => checks.push(Check {
             status: "pass",
             name: "engine",

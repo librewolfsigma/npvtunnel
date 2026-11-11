@@ -1,0 +1,13 @@
+// markdownlint-cli2 config for NPVTunnel.
+//
+// CHANGELOG.md follows Keep a Changelog: every version section repeats the
+// same "### Added" / "### Changed" / "### Fixed" headings. MD024 with
+// `siblings_only` permits that (it only forbids duplicates under the same
+// parent heading) while still catching real duplicate headings elsewhere.
+{
+  "config": {
+    "MD024": {
+      "siblings_only": true
+    }
+  }
+}

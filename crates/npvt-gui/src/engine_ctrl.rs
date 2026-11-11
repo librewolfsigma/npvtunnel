@@ -5,10 +5,9 @@
 //! results into the lock-protected [`Shared`] state; the UI only reads.
 
 use std::collections::BTreeMap;
-use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use egui::Context;
 use serde_json::{json, Value};
@@ -45,7 +44,6 @@ pub enum Status {
 pub enum PingOutcome {
     Ms(u16),
     Timeout,
-    Failed(String),
 }
 
 impl PingOutcome {
@@ -53,7 +51,6 @@ impl PingOutcome {
         match self {
             PingOutcome::Ms(ms) => format!("{ms} ms"),
             PingOutcome::Timeout => "timeout".into(),
-            PingOutcome::Failed(e) => format!("error: {e}"),
         }
     }
     pub fn color(&self) -> (u8, u8, u8) {
@@ -62,14 +59,12 @@ impl PingOutcome {
             PingOutcome::Ms(ms) if *ms < 300 => (245, 158, 11),
             PingOutcome::Ms(_) => (248, 113, 113),
             PingOutcome::Timeout => (146, 160, 154),
-            PingOutcome::Failed(_) => (146, 160, 154),
         }
     }
     pub fn rank(&self) -> u32 {
         match self {
             PingOutcome::Ms(ms) => *ms as u32,
             PingOutcome::Timeout => 100_000,
-            PingOutcome::Failed(_) => 200_000,
         }
     }
 }
@@ -119,31 +114,8 @@ impl Shared {
 
 /// TCP-connect latency probe; this is what the PING buttons run.
 pub fn probe_once(profile: &Profile) -> PingOutcome {
-    use std::str::FromStr;
-    let addr = std::net::SocketAddr::from_str(&format!("{}:{}", profile.server, profile.port));
-    let addr = match addr {
-        Ok(a) => a,
-        Err(_) => {
-            // Host name: resolve first (connect_timeout needs a socket addr).
-            use std::net::ToSocketAddrs;
-            match (profile.server.as_str(), profile.port).to_socket_addrs() {
-                Ok(mut addrs) => match addrs.next() {
-                    Some(a) => a,
-                    None => return PingOutcome::Failed("resolve failed".into()),
-                },
-                Err(e) => return PingOutcome::Failed(format!("resolve: {e}")),
-            }
-        }
-    };
-    let started = Instant::now();
-    match TcpStream::connect_timeout(&addr, Duration::from_secs(3)) {
-        Ok(_) => {
-            let ms = started.elapsed().as_millis();
-            u16::try_from(ms)
-                .map(PingOutcome::Ms)
-                .unwrap_or(PingOutcome::Ms(u16::MAX))
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => PingOutcome::Timeout,
+    match engine::ping_server(&profile.server, profile.port, Duration::from_secs(3)) {
+        Ok(ms) => PingOutcome::Ms(ms),
         Err(_) => PingOutcome::Timeout,
     }
 }
@@ -211,15 +183,15 @@ pub fn build_engine_config(
     active_id: &str,
     settings: &Settings,
 ) -> npvt_core::Result<Value> {
-    let mut cfg = engine::config(profiles, active_id, settings.socks_port, &settings.dns)?;
-    // Live traffic: expose the clash API on loopback only.
-    cfg["experimental"] = json!({
-        "clash_api": {
-            "external_controller": format!("127.0.0.1:{}", settings.api_port),
-            "default_mode": "rule"
-        },
-        "cache_file": { "enabled": false }
-    });
+    let mut cfg = engine::config(
+        profiles,
+        active_id,
+        settings.socks_port,
+        &settings.dns,
+        Some(settings.api_port),
+    )?;
+    // The core already injects the clash-API experimental block; add the
+    // GUI-specific per-app rules and LAN consent on top.
     apply_per_app(&mut cfg, &settings.per_app, active_id, profiles);
     if settings.allow_lan {
         if let Some(inbound) = cfg["inbounds"].as_array_mut().and_then(|a| a.first_mut()) {
@@ -268,32 +240,27 @@ fn apply_per_app(cfg: &mut Value, per_app: &PerApp, active_id: &str, profiles: &
     }
 }
 
-/// Adopt an engine left running by the CLI (pid file) so the GUI never
+/// Adopt an engine left running by the CLI (session file) so the GUI never
 /// silently double-starts.
 pub fn adopt_running(shared: &Shared) -> bool {
-    let pid_path = match engine::work_dir() {
-        Ok(dir) => dir.join("engine.pid"),
-        Err(_) => return false,
-    };
-    let Ok(text) = std::fs::read_to_string(&pid_path) else {
+    let Ok(session) = engine::read_pid_file() else {
         return false;
     };
-    let pid: u32 = match text.trim().parse() {
-        Ok(v) => v,
-        Err(_) => return false,
+    let Some(session) = session else {
+        return false;
     };
-    if engine::alive(pid) {
+    if engine::alive(session.pid) {
         if let Ok(mut guard) = shared.engine_pid.lock() {
-            *guard = Some(pid);
+            *guard = Some(session.pid);
         }
         shared.set_status(Status::Connected {
-            profile_id: String::new(),
-            label: "CLI engine".into(),
-            since: 0,
+            profile_id: session.profile_id,
+            label: session.name,
+            since: session.started,
         });
         true
     } else {
-        let _ = std::fs::remove_file(&pid_path);
+        engine::clear_pid_file();
         false
     }
 }
@@ -332,7 +299,13 @@ pub fn start_engine(
     match engine::start(&bin, &cfg_path, &log_path) {
         Ok(running) => {
             let pid = running.pid;
-            let _ = std::fs::write(workdir.join("engine.pid"), pid.to_string());
+            let _ = engine::write_pid_file(&engine::PidFile {
+                pid,
+                profile_id: active_id.to_string(),
+                name: active_label.to_string(),
+                socks_port: settings.socks_port,
+                started: unix_now(),
+            });
             if let Ok(mut guard) = shared.engine_pid.lock() {
                 *guard = Some(pid);
             }
@@ -377,9 +350,7 @@ pub fn stop_engine(shared: &Shared) -> Result<(), String> {
         if let Ok(mut guard) = shared.engine_pid.lock() {
             *guard = None;
         }
-        if let Ok(dir) = engine::work_dir() {
-            let _ = std::fs::remove_file(dir.join("engine.pid"));
-        }
+        engine::clear_pid_file();
         result.map_err(|e| e.to_string())?;
     }
     if let Ok(mut rates) = shared.rates.lock() {
@@ -532,7 +503,7 @@ mod tests {
         let cfg = build_engine_config(std::slice::from_ref(&p), "a", &settings).expect("cfg");
         assert_eq!(
             cfg["experimental"]["clash_api"]["external_controller"],
-            "127.0.0.1:9090"
+            format!("127.0.0.1:{}", engine::DEFAULT_CLASH_PORT)
         );
         assert_eq!(cfg["inbounds"][0]["listen"], "127.0.0.1");
         settings.allow_lan = true;

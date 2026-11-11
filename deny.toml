@@ -1,10 +1,24 @@
 # cargo-deny policy for NPVTunnel.
-# CI runs `cargo deny check advisories licenses sources` per crate.
+#
+# master-ci runs `cargo deny check` inside every crate directory and only
+# materializes its default config when the crate has no deny.toml - so this
+# policy is deliberately duplicated at the root and in each crate.
 
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # ttf-parser is unmaintained (superseded by skrifa); egui pulls it only
+    # for rendering its embedded default fonts. No vulnerability is known.
+    "RUSTSEC-2026-0192",
+    # zbus_names / zvariant / zvariant_derive are unmaintained upstream while
+    # the maintainers work on the next major release. They enter the tree via
+    # rfd's Linux file-dialog backend only; shipped Windows builds do not
+    # compile them. No vulnerability is known.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [licenses]
 version = 2
@@ -20,7 +34,21 @@ allow = [
     "Unicode-DFS-2016",
     "Zlib",
     "CC0-1.0",
+    # GUI dependency tree (egui/eframe, arboard, dirs):
+    "BSL-1.0",          # Boost, permissive (text shaping crates)
+    "MPL-2.0",          # weak file-level copyleft (option-ext, error-code)
+    "OFL-1.1",          # bundled font license (Inter, egui fonts crate)
+    "Ubuntu-font-1.0",  # egui's bundled Ubuntu-Light font
+    "CDLA-Permissive-2.0",  # ureq's webpki-roots (Mozilla CA store)
 ]
+
+# epaint_default_fonts 0.29 embeds the egui default fonts and reports the
+# Ubuntu Font License as the non-SPDX `LicenseRef-UFL-1.0`; normalize it to
+# the SPDX name (same license text, already allowed above).
+[[licenses.clarify]]
+name = "epaint_default_fonts"
+expression = "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0"
+license-files = []
 
 [sources]
 unknown-registry = "warn"

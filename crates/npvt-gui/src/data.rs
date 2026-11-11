@@ -67,7 +67,7 @@ impl Default for Settings {
             socks_port: npvt_core::engine::DEFAULT_SOCKS_PORT,
             allow_lan: false,
             dns: "1.1.1.1".into(),
-            api_port: 9090,
+            api_port: npvt_core::engine::DEFAULT_CLASH_PORT,
             autostart: false,
             autoconnect: false,
             per_app: PerApp::default(),

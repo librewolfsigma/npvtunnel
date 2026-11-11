@@ -1,0 +1,19 @@
+# OSV scanner policy for NPVTunnel (CI enforces `osv-scanner scan source`).
+# Only informational "unmaintained" notices are ignored; real vulnerabilities
+# fail the gate.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+reason = "ttf-parser is unmaintained (superseded by skrifa); egui uses it only to render embedded default fonts. No vulnerability is known."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+reason = "zbus_names is unmaintained upstream pending the next major release; enters via rfd's Linux file-dialog backend only. No vulnerability is known."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+reason = "zvariant is unmaintained upstream pending the next major release; enters via rfd's Linux file-dialog backend only. No vulnerability is known."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+reason = "zvariant_derive is unmaintained upstream pending the next major release; enters via rfd's Linux file-dialog backend only. No vulnerability is known."
