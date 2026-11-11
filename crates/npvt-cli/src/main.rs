@@ -27,7 +27,7 @@ use npvt_core::engine::{self, DEFAULT_SOCKS_PORT};
 use npvt_core::error::ErrorClass;
 use npvt_core::npvt::v1;
 use npvt_core::npvt::v2::{self, Lock, Policy, Unlock};
-use npvt_core::profile::{unix_now, Credential, Profile};
+use npvt_core::profile::{parse_expires, unix_now, Credential, Profile};
 use npvt_core::session::{self, Session};
 use npvt_core::uri::{parse_import, ImportSource};
 use npvt_core::vault::{
@@ -671,73 +671,6 @@ fn cmd_import(
 }
 
 // ── export ──────────────────────────────────────────────────────────────────
-
-fn parse_expires(spec: &str) -> Result<u64> {
-    let now = unix_now();
-    if let Some(days) = spec.strip_prefix('+') {
-        let days: u64 = days
-            .strip_suffix('d')
-            .unwrap_or(days)
-            .parse()
-            .map_err(|_| Error::InvalidConfig("expiry must be YYYY-MM-DD or +Nd".into()))?;
-        if days > 3650 {
-            return Err(Error::InvalidConfig("expiry longer than 10 years".into()));
-        }
-        return Ok(now + days * 86_400);
-    }
-    let parts: Vec<&str> = spec.split('-').collect();
-    if parts.len() != 3 {
-        return Err(Error::InvalidConfig(
-            "expiry must be YYYY-MM-DD or +Nd".into(),
-        ));
-    }
-    let year: i64 = parts[0]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad year".into()))?;
-    let month: u32 = parts[1]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad month".into()))?;
-    let day: u32 = parts[2]
-        .parse()
-        .map_err(|_| Error::InvalidConfig("bad day".into()))?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(Error::InvalidConfig("bad date".into()));
-    }
-    let leap = |y: i64| (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let dim = [
-        31,
-        if leap(year) { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ][(month - 1) as usize];
-    if day > dim {
-        return Err(Error::InvalidConfig("bad day of month".into()));
-    }
-    // Days-from-civil (Hinnant), valid for years >= 1970 here.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = ((month + 9) % 12) as i64;
-    let doy = (153 * mp + 2) / 5 + day as i64 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    if days < 0 {
-        return Err(Error::InvalidConfig("date is before 1970".into()));
-    }
-    let unix = days as u64 * 86_400;
-    if unix <= now {
-        return Err(Error::InvalidConfig("expiry must be in the future".into()));
-    }
-    Ok(unix)
-}
 
 fn parse_pubkey(spec: &str) -> Result<[u8; 32]> {
     let bytes = B64URL

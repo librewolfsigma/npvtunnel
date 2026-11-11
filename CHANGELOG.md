@@ -87,3 +87,23 @@ follows semver.
 - Tag-triggered `release.yml` that builds the Windows x64 binary, packages
   `npvtunnel-windows-x64-<tag>.zip` with `SHA256SUMS.txt` and publishes the
   GitHub Release via the preinstalled `gh` CLI.
+
+## [0.2.0] - 2026-11-11
+
+### Added
+
+- Native Windows desktop GUI (`npvtunnel-gui.exe`, egui/eframe, single exe,
+  no runtime dependencies): dark dashboard with one-click connect/disconnect,
+  live status (Offline / Connecting / Protected / Error), uptime and SOCKS
+  endpoint display, profile library with security-card import (file dialog or
+  share link), passphrase-locked signed exports, engine diagnostics and an
+  activity log.
+- The GUI and the CLI share the same vault and the same sing-box sidecar;
+  either surface picks up a tunnel the other started (shared pid file).
+- Embedded application icon (shield + bolt) for window and taskbar.
+
+### Changed
+
+- Engine pid-file handling and expiry parsing moved into `npvt-core`
+  (`engine::read/write_pid_file`, `profile::parse_expires`) so the CLI and
+  the GUI share one implementation.

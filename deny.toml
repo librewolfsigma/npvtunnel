@@ -1,10 +1,24 @@
 # cargo-deny policy for NPVTunnel.
-# CI runs `cargo deny check advisories licenses sources` per crate.
+#
+# master-ci runs `cargo deny check` inside every crate directory and only
+# materializes its default config when the crate has no deny.toml - so this
+# policy is deliberately duplicated at the root and in each crate.
 
 [advisories]
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # ttf-parser is unmaintained (superseded by skrifa); egui pulls it only
+    # for rendering its embedded default fonts. No vulnerability is known.
+    "RUSTSEC-2026-0192",
+    # zbus_names / zvariant / zvariant_derive are unmaintained upstream while
+    # the maintainers work on the next major release. They enter the tree via
+    # rfd's Linux file-dialog backend only; shipped Windows builds do not
+    # compile them. No vulnerability is known.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [licenses]
 version = 2

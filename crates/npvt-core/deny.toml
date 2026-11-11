@@ -1,0 +1,48 @@
+# cargo-deny policy for NPVTunnel.
+# CI runs `cargo deny check advisories licenses sources` per crate.
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = [
+    # ttf-parser is unmaintained (superseded by skrifa); egui pulls it only
+    # for rendering its embedded default fonts. No vulnerability is known.
+    "RUSTSEC-2026-0192",
+    # zbus_names / zvariant / zvariant_derive are unmaintained upstream while
+    # the maintainers work on the next major release. They enter the tree via
+    # rfd's Linux file-dialog backend only; shipped Windows builds do not
+    # compile them. No vulnerability is known.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    # epaint_default_fonts embeds the egui default fonts, which ship under
+    # the SIL Open Font License and the Ubuntu Font License.
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    # dirs pulls option-ext (MPL-2.0); rfd pulls clipboard-win + error-code
+    # (BSL-1.0) on Windows. Both standard, permissive-ish corpus licenses.
+    "MPL-2.0",
+    "BSL-1.0",
+]
+
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
