@@ -15,12 +15,12 @@ Quick start
 -----------
 1. Double-click NPVTunnel.exe.
 2. Open the Configs page and click "Add config":
-   - "Import config file (.npvt)..." to pick a .npvt/.npvs file,
-   - "Import config from Clipboard" for a vless://... share link,
-   - "Add config manually" to type the server details.
+  - "Import config file (.npvt)..." to pick a .npvt/.npvs file,
+  - "Import config from Clipboard" for a vless://... share link,
+  - "Add config manually" to type the server details.
 3. Go back to Home and press the big power button.
 4. "[ CONNECTED ]" shows live down/up traffic and the ping; press the button
-   again to disconnect.
+  again to disconnect.
 
 The app and the CLI share one engine session, so `npvt-cli status` and
 `npvt-cli disconnect` work while the GUI is connected.
