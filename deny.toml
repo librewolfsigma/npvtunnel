@@ -20,6 +20,11 @@ allow = [
     "Unicode-DFS-2016",
     "Zlib",
     "CC0-1.0",
+    # GUI dependency tree (egui/eframe, arboard, dirs):
+    "BSL-1.0",          # Boost, permissive (text shaping crates)
+    "MPL-2.0",          # weak file-level copyleft (option-ext, error-code)
+    "OFL-1.1",          # bundled font license (Inter, egui fonts crate)
+    "Ubuntu-font-1.0",  # egui's bundled Ubuntu-Light font
 ]
 
 [sources]

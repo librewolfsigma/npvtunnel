@@ -10,7 +10,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [[bin]]
-name = "npvtunnel"
+name = "npvt-cli"
 path = "src/main.rs"
 
 [dependencies]

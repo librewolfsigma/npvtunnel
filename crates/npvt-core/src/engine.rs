@@ -11,13 +11,19 @@
 //!   roadmap message instead of silently downgrading security.
 
 use serde_json::{json, Map, Value};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
 use crate::profile::{Credential, Profile, Protocol, Transport};
 
 /// Default local SOCKS inbound port.
 pub const DEFAULT_SOCKS_PORT: u16 = 2080;
+/// Default local clash-API port used for live traffic stats (localhost only).
+pub const DEFAULT_CLASH_PORT: u16 = 19090;
+/// Extra port for [`ping_server`] probes when the caller wants a free port.
+const PING_PROBE_PORT: u16 = 0;
 
 fn tls_block(p: &Profile, required: bool) -> Option<Value> {
     let enabled = required || p.transport == Transport::Tls;
@@ -159,11 +165,16 @@ pub fn outbound(p: &Profile) -> Result<Value> {
 
 /// Render a full sing-box config for the given profiles with `active` as the
 /// selected outbound.
+///
+/// When `clash_port` is given, the config enables the clash-API experimental
+/// block bound to `127.0.0.1` so front ends can poll live traffic stats; it
+/// is never exposed beyond localhost.
 pub fn config(
     profiles: &[Profile],
     active_id: &str,
     socks_port: u16,
     dns_server: &str,
+    clash_port: Option<u16>,
 ) -> Result<Value> {
     let active = profiles
         .iter()
@@ -174,7 +185,7 @@ pub fn config(
         outbounds.push(outbound(p)?);
     }
     outbounds.push(json!({"type": "direct", "tag": "direct"}));
-    Ok(json!({
+    let mut rendered = json!({
         "log": {"level": "warn"},
         "dns": {
             "servers": [
@@ -192,7 +203,16 @@ pub fn config(
         ],
         "outbounds": outbounds,
         "route": {"final": active.id}
-    }))
+    });
+    if let Some(port) = clash_port {
+        rendered["experimental"] = json!({
+            "clash_api": {
+                "external_controller": format!("127.0.0.1:{port}"),
+                "default_mode": "Rule"
+            }
+        });
+    }
+    Ok(rendered)
 }
 
 /// Where the engine config, pid and log files live.
@@ -330,6 +350,40 @@ pub fn stop(pid: u32) -> Result<()> {
     Ok(())
 }
 
+/// Measure the TCP handshake latency to `host:port` in milliseconds.
+///
+/// This is a liveness/latency probe of the tunnel endpoint itself, not an
+/// application-level HTTP ping. DNS resolution counts toward the reported
+/// latency. Fails when the endpoint refuses or times out.
+pub fn ping_server(host: &str, port: u16, timeout: Duration) -> Result<u16> {
+    let addr = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| Error::Engine(format!("failed to resolve '{host}': {e}")))?
+        .next()
+        .ok_or_else(|| Error::Engine(format!("no address resolved for '{host}'")))?;
+    let start = Instant::now();
+    let stream = TcpStream::connect_timeout(&addr, timeout)
+        .map_err(|e| Error::Engine(format!("connect to {host}:{port} failed: {e}")))?;
+    drop(stream);
+    let elapsed = start.elapsed().as_millis();
+    Ok(u16::try_from(elapsed).unwrap_or(u16::MAX))
+}
+
+/// Pick a free localhost port by binding an ephemeral listener and reading
+/// its port. Used by tests and front ends that need to avoid port clashes.
+pub fn free_local_port() -> Result<u16> {
+    let listener = TcpListener::bind(("127.0.0.1", PING_PROBE_PORT))
+        .map_err(|e| Error::Engine(format!("could not bind an ephemeral port: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| Error::Engine(format!("could not read local addr: {e}")))?
+        .port();
+    // Deliberately drop the listener: the port becomes free again. Racy in
+    // theory, deterministic enough for tests and best-effort defaults.
+    drop(listener);
+    Ok(port)
+}
+
 /// Read the last `max_lines` lines of a log file for error reports; the
 /// file may be unreadable or contain invalid UTF-8, which is not fatal here.
 pub fn log_tail(path: &Path, max_lines: usize) -> String {
@@ -427,10 +481,12 @@ mod tests {
             &p.id,
             DEFAULT_SOCKS_PORT,
             "1.1.1.1",
+            None,
         )
         .expect("config");
         assert_eq!(cfg["inbounds"][0]["listen"], "127.0.0.1");
         assert_eq!(cfg["route"]["final"], "abc123");
+        assert!(cfg.get("experimental").is_none(), "no clash api by default");
         let types: Vec<&str> = cfg["outbounds"]
             .as_array()
             .expect("array")
@@ -438,6 +494,50 @@ mod tests {
             .filter_map(|o| o["type"].as_str())
             .collect();
         assert!(types.contains(&"direct"));
+    }
+
+    #[test]
+    fn config_with_clash_api_binds_localhost() {
+        let p = vless();
+        let cfg = config(
+            std::slice::from_ref(&p),
+            &p.id,
+            DEFAULT_SOCKS_PORT,
+            "1.1.1.1",
+            Some(DEFAULT_CLASH_PORT),
+        )
+        .expect("config");
+        let controller = cfg["experimental"]["clash_api"]["external_controller"]
+            .as_str()
+            .expect("controller");
+        assert_eq!(controller, "127.0.0.1:19090");
+        assert_eq!(cfg["inbounds"][0]["listen"], "127.0.0.1");
+    }
+
+    #[test]
+    fn ping_localhost_listener_is_fast() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let ms = ping_server("127.0.0.1", port, Duration::from_secs(2)).expect("ping");
+        assert!(ms <= 2000, "handshake latency should be bounded, got {ms}");
+    }
+
+    #[test]
+    fn ping_dead_endpoint_fails() {
+        // Port 9 (discard) is virtually never open; bind-then-drop is racy.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        assert!(ping_server("127.0.0.1", port, Duration::from_millis(250)).is_err());
+    }
+
+    #[test]
+    fn free_local_port_returns_a_usable_port() {
+        let port = free_local_port().expect("port");
+        assert!(port > 0);
+        // Another ephemeral bind must not return the *same* live listener.
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+        let _ = listener;
     }
 
     #[test]

@@ -4,6 +4,44 @@ All notable changes to npvtunnel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versioning
 follows semver.
 
+## [0.2.0] - 2026-11-11
+
+### Added
+
+- **Native Windows GUI (`NPVTunnel.exe`, new `npvt-gui` crate):** a dark,
+  neon-green desktop app in the NPV TUNNEL brand style - the signature power
+  button with a breathing glow, `[ CONNECTED ]` status, active-connection
+  card, live traffic stats (down/up rates plus session totals from the
+  engine's local clash API), endpoint ping with colored latency badges,
+  grouped config cards, and a left sidebar (Home / Configs / Logs / More).
+- The release zip now bundles `sing-box.exe` next to the app, so connect
+  works out of the box; the More page shows the detected engine path.
+- Import flows in the GUI: `.npvt`/`.npvs` file picker, clipboard share
+  links, a passphrase unlock dialog for locked containers, and the security
+  card (lock kind, signature, expiry, allow_insecure warnings) before
+  anything enters the vault.
+- Export dialog with lock-it (passphrase) / keep-it-open modes, optional
+  expiry in days, group hints and creator-key signing; manual add/edit form
+  for all engine-supported protocols; delete confirmation.
+- More page: Dark / Light / Auto themes (Auto follows the Windows
+  personalization setting), recipient public key with copy, engine ports and
+  DNS, auto-ping / auto-connect options, data-folder shortcut.
+- Shared engine session (`npvt-core::session`): the GUI and the CLI both see
+  and can stop the same tunnel through one pid file; closing the GUI while
+  connected asks whether to stop the tunnel or leave it up.
+- App icon (dark rounded square, neon power glyph) embedded into the exe and
+  the window; Inter typeface bundled (SIL OFL 1.1); third-party license
+  notices ship in the zip.
+
+### Changed
+
+- The CLI binary is renamed `npvtunnel` -> `npvt-cli` so it cannot collide
+  with `NPVTunnel.exe` on case-insensitive Windows filesystems.
+- `engine::config` takes an optional local clash-API port so front ends can
+  poll live traffic; the CLI keeps its previous behavior by passing `None`.
+- Release zip now contains `NPVTunnel.exe`, `npvt-cli.exe`, `sing-box.exe`,
+  a plain-text quick start, license notices and `SHA256SUMS.txt`.
+
 ## [0.1.1] - 2026-11-11
 
 ### Fixed

@@ -1,0 +1,38 @@
+Third-party license notices for NPVTunnel
+=========================================
+
+NPVTunnel itself is MIT licensed (see LICENSE).
+
+sing-box (bundled engine, sing-box.exe)
+---------------------------------------
+  Copyright (C) 2022 by nekohasekai <contact-sagernet@sekai.icu>
+  License: GNU General Public License v3.0 (GPL-3.0)
+  Source:  https://github.com/SagerNet/sing-box
+
+  This binary is distributed unmodified as a separate, aggregated program.
+  Its source code is available at the URL above under the GPL-3.0 terms;
+  this notice does not modify those terms. The NPVTunnel application is not
+  a derivative work of sing-box and communicates with it as an independent
+  process.
+
+Inter typeface (assets/Inter-*.ttf, embedded in the GUI)
+--------------------------------------------------------
+  Copyright (c) 2016 The Inter Project Authors
+  License: SIL Open Font License, Version 1.1
+  Source:  https://github.com/rsms/inter
+  Full text: see assets/Inter-OFL.txt in the source repository.
+
+Ubuntu font face (bundled with egui's default font set)
+-------------------------------------------------------
+  Copyright 2011 Canonical Ltd.
+  License: Ubuntu Font Licence 1.0
+  Source:  https://github.com/egui-eg/fonts
+
+Rust dependencies
+-----------------
+  The Rust crate dependencies (egui/eframe, wgpu, rustls-free ureq, rfd,
+  arboard, and the crypto stack) are distributed under the permissive
+  licenses allow-listed in deny.toml: MIT, Apache-2.0, BSD-2/3-Clause, ISC,
+  BSL-1.0, MPL-2.0, Unicode-3.0, Zlib, CC0-1.0, OFL-1.1 and
+  Ubuntu-font-1.0. Their full license texts ship with the source
+  repository lockfile metadata at https://github.com/librewolfsigma/npvtunnel.
