@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -19,12 +20,45 @@ use std::time::{Duration, Instant};
 use crate::error::{Error, Result};
 use crate::profile::{Credential, Profile, Protocol, Transport};
 
+/// Expected SHA-256 of the bundled sing-box binary.
+///
+/// Set this at build time (e.g. via `NPVT_ENGINE_SHA256` env var) to enable
+/// authenticity verification. On each startup, the found sing-box binary is
+/// hashed and compared to this value; a mismatch aborts startup.
+///
+/// If unset (empty), verification is skipped.
+#[allow(dead_code)]
+pub const EXPECTED_ENGINE_SHA256: Option<&'static str> = option_env!("NPVT_ENGINE_SHA256");
+
 /// Default local SOCKS inbound port.
 pub const DEFAULT_SOCKS_PORT: u16 = 2080;
 /// Default local clash-API port used for live traffic stats (localhost only).
 pub const DEFAULT_CLASH_PORT: u16 = 19090;
+/// Default TUN interface address (IPv4) when TUN mode is enabled.
+pub const DEFAULT_TUN_ADDRESS: &str = "10.255.0.1/24";
+/// Default TUN interface MTU.
+pub const DEFAULT_TUN_MTU: u16 = 1500;
 /// Extra port for [`ping_server`] probes when the caller wants a free port.
 const PING_PROBE_PORT: u16 = 0;
+
+/// Action for a per-process routing rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RouteAction {
+    /// Force traffic through the tunnel proxy.
+    Proxy,
+    /// Force traffic directly (bypass the tunnel).
+    Direct,
+}
+
+/// A per-process routing rule. Matches by process image name (e.g. `foo.exe`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RouteRule {
+    /// Process image name to match.
+    pub process_name: String,
+    /// Action to take for matching traffic.
+    pub action: RouteAction,
+}
 
 fn tls_block(p: &Profile, required: bool) -> Option<Value> {
     let enabled = required || p.transport == Transport::Tls;
@@ -170,12 +204,19 @@ pub fn outbound(p: &Profile) -> Result<Value> {
 /// When `clash_port` is given, the config enables the clash-API experimental
 /// block bound to `127.0.0.1` so front ends can poll live traffic stats; it
 /// is never exposed beyond localhost.
+///
+/// When `tun_mode` is true, a TUN inbound is added and the route final points
+/// to it instead of a profile outbound. When `route_rules` is non-empty,
+/// per-process routing rules are added to the route block.
 pub fn config(
     profiles: &[Profile],
     active_id: &str,
     socks_port: u16,
     dns_server: &str,
     clash_port: Option<u16>,
+    tun_mode: bool,
+    tun_address: Option<&str>,
+    route_rules: &[RouteRule],
 ) -> Result<Value> {
     let active = profiles
         .iter()
@@ -186,6 +227,49 @@ pub fn config(
         outbounds.push(outbound(p)?);
     }
     outbounds.push(json!({"type": "direct", "tag": "direct"}));
+
+    let mut inbounds = vec![json!({
+        "type": "socks",
+        "tag": "socks-in",
+        "listen": "127.0.0.1",
+        "listen_port": socks_port,
+        "udp_enabled": profiles.iter().any(|p| p.udp)
+    })];
+
+    let route_final: String = if tun_mode {
+        // Add a TUN inbound that captures all traffic when TUN mode is on.
+        let address = tun_address.unwrap_or(DEFAULT_TUN_ADDRESS);
+        inbounds.push(json!({
+            "type": "tun",
+            "tag": "tun-in",
+            "address": [address],
+            "mtu": DEFAULT_TUN_MTU,
+            "auto_route": true,
+            "strict_route": true
+        }));
+        "tun-in".to_string()
+    } else {
+        active.id.clone()
+    };
+
+    // Build route rules for per-process routing.
+    let mut route_rules_value = Vec::new();
+    for rule in route_rules {
+        let action_tag = match rule.action {
+            RouteAction::Proxy => active.id.clone(),
+            RouteAction::Direct => "direct".to_string(),
+        };
+        route_rules_value.push(json!({
+            "process_name": rule.process_name,
+            "outbound": action_tag,
+        }));
+    }
+
+    let mut route = json!({"final": route_final});
+    if !route_rules_value.is_empty() {
+        route["rules"] = Value::Array(route_rules_value);
+    }
+
     let mut rendered = json!({
         "log": {"level": "warn"},
         "dns": {
@@ -193,17 +277,9 @@ pub fn config(
                 {"tag": "dns-remote", "address": dns_server}
             ]
         },
-        "inbounds": [
-            {
-                "type": "socks",
-                "tag": "socks-in",
-                "listen": "127.0.0.1",
-                "listen_port": socks_port,
-                "udp_enabled": profiles.iter().any(|p| p.udp)
-            }
-        ],
+        "inbounds": inbounds,
         "outbounds": outbounds,
-        "route": {"final": active.id}
+        "route": route
     });
     if let Some(port) = clash_port {
         rendered["experimental"] = json!({
@@ -305,6 +381,43 @@ pub fn find_engine_binary(explicit: Option<&Path>) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Compute the SHA-256 digest of a file as a lowercase hex string.
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::Engine(format!("cannot read '{}': {e}", path.display())))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let result = hasher.finalize();
+    Ok(format!("{result:x}"))
+}
+
+/// Verify the authenticity of the sing-box binary against the embedded
+/// expected checksum. Returns `Ok(())` when verification passes or is skipped
+/// (no expected checksum configured), `Err` on mismatch.
+pub fn verify_engine_binary(bin: &Path) -> Result<()> {
+    let Some(expected) = EXPECTED_ENGINE_SHA256 else {
+        return Ok(()); // verification not configured
+    };
+    if expected.is_empty() {
+        return Ok(());
+    }
+    let actual = sha256_file(bin)?;
+    if actual != expected {
+        return Err(Error::Engine(format!(
+            "sing-box authenticity check failed: expected {expected}, got {actual}"
+        )));
+    }
+    Ok(())
+}
+
+/// On Windows, set the file's DACL to owner-only. Best-effort: not yet
+/// implemented because `#![forbid(unsafe_code)]` blocks the required Windows
+/// API calls. Tracked as a post-v1.0 hardening item (SECURITY.md).
+#[cfg(windows)]
+pub fn set_owner_only(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 /// Write the engine config with tight permissions.
@@ -529,6 +642,9 @@ mod tests {
             DEFAULT_SOCKS_PORT,
             "1.1.1.1",
             None,
+            false,
+            None,
+            &[],
         )
         .expect("config");
         assert_eq!(cfg["inbounds"][0]["listen"], "127.0.0.1");
@@ -552,6 +668,9 @@ mod tests {
             DEFAULT_SOCKS_PORT,
             "1.1.1.1",
             Some(DEFAULT_CLASH_PORT),
+            false,
+            None,
+            &[],
         )
         .expect("config");
         let controller = cfg["experimental"]["clash_api"]["external_controller"]
@@ -559,6 +678,68 @@ mod tests {
             .expect("controller");
         assert_eq!(controller, "127.0.0.1:19090");
         assert_eq!(cfg["inbounds"][0]["listen"], "127.0.0.1");
+    }
+
+    #[test]
+    fn config_tun_mode_adds_tun_inbound() {
+        let p = vless();
+        let cfg = config(
+            std::slice::from_ref(&p),
+            &p.id,
+            DEFAULT_SOCKS_PORT,
+            "1.1.1.1",
+            None,
+            true,
+            Some("10.255.0.1/24"),
+            &[],
+        )
+        .expect("config");
+        assert_eq!(cfg["route"]["final"], "tun-in");
+        let tun = cfg["inbounds"]
+            .as_array()
+            .expect("inbounds array")
+            .iter()
+            .find(|i| i["tag"] == "tun-in")
+            .expect("tun-in inbound");
+        assert_eq!(tun["type"], "tun");
+        assert_eq!(tun["address"][0], "10.255.0.1/24");
+        assert_eq!(tun["mtu"], 1500);
+        assert_eq!(tun["auto_route"], true);
+        assert_eq!(tun["strict_route"], true);
+        // SOCKS inbound still present.
+        assert_eq!(cfg["inbounds"][0]["type"], "socks");
+    }
+
+    #[test]
+    fn config_route_rules_are_rendered() {
+        let p = vless();
+        let rules = [
+            crate::engine::RouteRule {
+                process_name: "foo.exe".to_string(),
+                action: crate::engine::RouteAction::Direct,
+            },
+            crate::engine::RouteRule {
+                process_name: "bar.exe".to_string(),
+                action: crate::engine::RouteAction::Proxy,
+            },
+        ];
+        let cfg = config(
+            std::slice::from_ref(&p),
+            &p.id,
+            DEFAULT_SOCKS_PORT,
+            "1.1.1.1",
+            None,
+            false,
+            None,
+            &rules,
+        )
+        .expect("config");
+        let route_rules = cfg["route"]["rules"].as_array().expect("rules array");
+        assert_eq!(route_rules.len(), 2);
+        assert_eq!(route_rules[0]["process_name"], "foo.exe");
+        assert_eq!(route_rules[0]["outbound"], "direct");
+        assert_eq!(route_rules[1]["process_name"], "bar.exe");
+        assert_eq!(route_rules[1]["outbound"], "abc123");
     }
 
     #[test]

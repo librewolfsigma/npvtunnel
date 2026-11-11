@@ -8,7 +8,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![forbid(unsafe_code)]
 
+mod assoc;
 mod bridge;
+mod firewall;
 mod pages;
 mod settings;
 mod store;
@@ -181,6 +183,17 @@ pub(crate) struct NpvApp {
     last_theme_refresh: Instant,
     requested_exit: bool,
     ctx_handle: egui::Context,
+    /// Pending `.npvt` / `.npvs` file passed on the command line, waiting for
+    /// the vault to load before opening the import security card.
+    pending_import_path: Option<PathBuf>,
+    /// Whether the window is currently hidden to the tray.
+    hidden_to_tray: bool,
+    /// Tray icon event receiver (Windows only), polled each frame.
+    #[cfg(windows)]
+    tray_rx: Option<tray_icon::event::EventReceiver>,
+    /// Tray icon handle, kept alive for the session (Windows only).
+    #[cfg(windows)]
+    tray_icon: Option<tray_icon::TrayIcon>,
 }
 
 impl NpvApp {
@@ -213,8 +226,23 @@ impl NpvApp {
                 self.settings.dns_server.clone(),
             );
             let profile_id = profile.id.clone();
-            self.bridge
-                .connect(&self.ctx_handle, profile_id, socks, clash, &dns);
+            let tun_address = if self.settings.tun_mode {
+                Some(self.settings.tun_address.clone())
+            } else {
+                None
+            };
+            let route_rules: Vec<npvt_core::engine::RouteRule> = Vec::new();
+            self.bridge.connect(
+                &self.ctx_handle,
+                profile_id,
+                socks,
+                clash,
+                &dns,
+                self.settings.tun_mode,
+                tun_address,
+                route_rules,
+                self.settings.kill_switch,
+            );
             if self.settings.auto_ping_on_connect {
                 self.ping_profile(&profile.id);
             }
@@ -367,6 +395,16 @@ impl NpvApp {
             Some((at, path)) if now.duration_since(*at) < Duration::from_secs(1) => path.clone(),
             _ => {
                 let path = npvt_core::engine::find_engine_binary(None);
+                if let Some(ref p) = path {
+                    if let Err(err) = npvt_core::engine::verify_engine_binary(p) {
+                        self.toast(
+                            ToastKind::Error,
+                            format!("sing-box authenticity check failed: {err}"),
+                        );
+                        self.engine_path = Some((now, None));
+                        return None;
+                    }
+                }
                 self.engine_path = Some((now, path.clone()));
                 path
             }
@@ -468,7 +506,9 @@ fn main() -> eframe::Result {
             .with_inner_size([1040.0, 680.0])
             .with_min_inner_size([900.0, 580.0])
             .with_title("NPV TUNNEL")
-            .with_icon(load_icon()),
+            .with_icon(load_icon())
+            // Start hidden? No: show the window normally on first launch.
+            .with_visible(true),
         ..Default::default()
     };
     eframe::run_native(
@@ -478,6 +518,29 @@ fn main() -> eframe::Result {
             theme::install_fonts(cc);
             let (palette, dark) = Settings::default().palette();
             theme::apply(&cc.egui_ctx, palette, dark);
+
+            // Pending file passed on the command line (double-clicked .npvt).
+            let pending_import_path = assoc::pending_file_from_args();
+
+            // System tray icon (Windows only).
+            #[cfg(windows)]
+            let (tray_icon, tray_rx) = {
+                let image = load_tray_image();
+                let mut builder = tray_icon::TrayIconBuilder::new()
+                    .with_tooltip("NPV TUNNEL")
+                    .with_icon(image)
+                    .with_menu_on_left_click(false);
+                builder = builder.with_menu(Box::new(tray_menu())).expect("tray menu");
+                match builder.build() {
+                    Ok((icon, rx)) => (Some(icon), Some(rx)),
+                    Err(e) => {
+                        eprintln!("tray icon unavailable: {e}");
+                        (None, None)
+                    }
+                }
+            };
+            #[cfg(not(windows))]
+            let (_tray_icon, _tray_rx): (Option<()>, Option<()>) = (None, None);
 
             let mut app = NpvApp {
                 settings: Settings::load(),
@@ -496,6 +559,12 @@ fn main() -> eframe::Result {
                 last_theme_refresh: Instant::now() - Duration::from_secs(3600),
                 requested_exit: false,
                 ctx_handle: cc.egui_ctx.clone(),
+                pending_import_path,
+                hidden_to_tray: false,
+                #[cfg(windows)]
+                tray_rx,
+                #[cfg(windows)]
+                tray_icon,
             };
             app.bridge.load_vault();
 
@@ -521,6 +590,44 @@ fn load_icon() -> egui::IconData {
         }
         Err(_) => egui::IconData::default(),
     }
+}
+
+/// Load the tray icon from the bundled PNG asset.
+#[cfg(windows)]
+fn load_tray_image() -> tray_icon::Icon {
+    let png = include_bytes!("../../../assets/icon-256.png");
+    let img = image::load_from_memory(png).unwrap_or_else(|_| {
+        // 1x1 transparent fallback
+        image::RgbaImage::from_pixel(1, 1, image::Rgba([0, 0, 0, 0]))
+    });
+    let rgba = img.to_rgba8();
+    tray_icon::Icon::from_rgba(rgba.into_raw(), rgba.width(), rgba.height()).expect("tray icon")
+}
+
+/// Build the system tray context menu.
+#[cfg(windows)]
+fn tray_menu() -> tray_icon::menu::Menu {
+    tray_icon::menu::Menu::new()
+        .append_item(&tray_icon::menu::MenuItem::new(
+            "Show NPV TUNNEL",
+            true,
+            None,
+        ))
+        .unwrap()
+        .append_item(&tray_icon::menu::MenuItem::new(
+            "Connect / Disconnect",
+            true,
+            None,
+        ))
+        .unwrap()
+        .append_separator()
+        .unwrap()
+        .append_item(&tray_icon::menu::MenuItem::new(
+            "Quit NPV TUNNEL",
+            true,
+            None,
+        ))
+        .unwrap()
 }
 
 // ── native file dialogs (Windows) ───────────────────────────────────────
@@ -563,15 +670,72 @@ impl eframe::App for NpvApp {
         let pending = self.bridge.take_pending();
         self.handle_pending(pending);
 
-        // Window close while connected: ask before tearing the tunnel down.
+        // Poll tray icon events (Windows only).
+        #[cfg(windows)]
+        if let Some(rx) = &self.tray_rx {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    tray_icon::event::TrayEvent::Click
+                    | tray_icon::event::TrayEvent::DoubleClick
+                    | tray_icon::event::TrayEvent::MenuItemClick(0) => {
+                        // Show / toggle the main window.
+                        if self.hidden_to_tray {
+                            self.hidden_to_tray = false;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Focused);
+                        }
+                    }
+                    tray_icon::event::TrayEvent::MenuItemClick(1) => {
+                        // Connect / Disconnect toggle.
+                        match &self.bridge.state {
+                            EngineState::Connected(_) => self.confirm_disconnect(),
+                            _ => self.request_connect_selected(),
+                        }
+                    }
+                    tray_icon::event::TrayEvent::MenuItemClick(2) => {
+                        // Quit: disconnect if running, then close.
+                        if matches!(self.bridge.state, EngineState::Connected(_)) {
+                            self.confirm_disconnect();
+                        }
+                        self.requested_exit = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Handle a pending file import passed on the command line once the
+        // vault has loaded.
+        if let Some(path) = self.pending_import_path.take() {
+            match std::fs::read(&path) {
+                Ok(bytes) => {
+                    self.ingest_import(Some(bytes), None, None, Some(path));
+                }
+                Err(err) => {
+                    self.toast(
+                        ToastKind::Error,
+                        format!("Could not read '{}': {err}", path.display()),
+                    );
+                }
+            }
+        }
+
+        // Window close requested.
         if ctx.input(|i| i.viewport().close_requested()) {
             let connected = matches!(self.bridge.state, EngineState::Connected(_));
-            if connected && self.settings.confirm_disconnect_on_exit && !self.requested_exit {
-                self.modal = Modal::ConfirmExit;
+            if connected {
+                if self.settings.confirm_disconnect_on_exit && !self.requested_exit {
+                    self.modal = Modal::ConfirmExit;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                } else if self.requested_exit {
+                    self.bridge.disconnect();
+                }
+            } else if !self.requested_exit {
+                // Not connected: hide to tray instead of closing.
+                self.hidden_to_tray = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            } else if self.requested_exit && matches!(self.bridge.state, EngineState::Connected(_))
-            {
-                self.bridge.disconnect();
             }
         }
 

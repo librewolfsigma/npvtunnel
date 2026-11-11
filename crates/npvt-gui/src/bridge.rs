@@ -20,6 +20,7 @@ use std::time::Duration;
 use npvt_core::engine;
 use npvt_core::session::{self, Session};
 
+use crate::firewall;
 use crate::store::{self, Incoming};
 
 /// How often the monitor thread re-checks engine liveness.
@@ -251,6 +252,10 @@ impl Bridge {
         socks_port: u16,
         clash_port: u16,
         dns: &str,
+        tun_mode: bool,
+        tun_address: Option<String>,
+        route_rules: Vec<npvt_core::engine::RouteRule>,
+        kill_switch: bool,
     ) {
         if matches!(
             self.state,
@@ -268,7 +273,17 @@ impl Bridge {
         let cancel = self.cancel.clone();
         let dns = dns.to_string();
         std::thread::spawn(move || {
-            let res = connect_flow(&profile_id, socks_port, clash_port, &dns, &cancel);
+            let res = connect_flow(
+                &profile_id,
+                socks_port,
+                clash_port,
+                &dns,
+                tun_mode,
+                tun_address.as_deref(),
+                &route_rules,
+                kill_switch,
+                &cancel,
+            );
             match &res {
                 Ok(info) => {
                     spawn_monitor_thread(tx.clone(), ctx.clone(), gen, cancel.clone());
@@ -418,6 +433,10 @@ fn connect_flow(
     socks_port: u16,
     clash_port: u16,
     dns: &str,
+    tun_mode: bool,
+    tun_address: Option<&str>,
+    route_rules: &[npvt_core::engine::RouteRule],
+    kill_switch: bool,
     cancel: &AtomicBool,
 ) -> Result<Session, String> {
     if cancel.load(Ordering::SeqCst) {
@@ -443,6 +462,9 @@ fn connect_flow(
         socks_port,
         dns,
         Some(clash_port),
+        tun_mode,
+        tun_address,
+        route_rules,
     )
     .map_err(|e| e.to_string())?;
     let cfg_path = workdir.join("engine.json");
@@ -476,11 +498,14 @@ fn connect_flow(
         started: npvt_core::profile::unix_now(),
     };
     session::write_session(&pf).map_err(|e| e.to_string())?;
+    if kill_switch {
+        firewall::enable_kill_switch().map_err(|e| format!("kill switch failed: {e}"))?;
+    }
     Ok(pf)
 }
 
 fn disconnect_flow() -> Result<(), String> {
-    match session::read_session().map_err(|e| e.to_string())? {
+    let res = match session::read_session().map_err(|e| e.to_string())? {
         Some(pf) if engine::alive(pf.pid) => {
             engine::stop(pf.pid).map_err(|e| e.to_string())?;
             session::clear_session().map_err(|e| e.to_string())?;
@@ -491,7 +516,10 @@ fn disconnect_flow() -> Result<(), String> {
             Ok(())
         }
         None => Ok(()),
-    }
+    };
+    // Best-effort: remove kill switch rules if any were added.
+    let _ = firewall::disable_kill_switch();
+    res
 }
 
 fn spawn_monitor_thread(

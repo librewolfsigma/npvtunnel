@@ -3,10 +3,12 @@
 use eframe::egui::{self, Align, Layout, RichText, Ui};
 
 use super::header;
+use crate::assoc;
 use crate::settings::ThemeMode;
 use crate::theme::{self, Palette};
 use crate::widgets;
 use crate::NpvApp;
+use crate::ToastKind;
 
 pub fn show(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
     header(
@@ -24,6 +26,8 @@ pub fn show(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
             ui.add_space(10.0);
             sharing_card(app, ui, p);
             ui.add_space(10.0);
+            file_assoc_card(app, ui, p);
+            ui.add_space(10.0);
             engine_card(app, ui, p);
             ui.add_space(10.0);
             about_card(app, ui, p);
@@ -32,6 +36,56 @@ pub fn show(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
 
 fn section_title(ui: &mut Ui, p: &Palette, title: &str) {
     ui.label(theme::semi(title).size(11.0).color(p.muted));
+}
+
+fn file_assoc_card(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
+    widgets::card(ui, p, |ui| {
+        section_title(ui, p, "FILE ASSOCIATION");
+        ui.add_space(4.0);
+        let already = app.settings.file_assoc || assoc::is_associated();
+        ui.label(
+            RichText::new("Double-click a `.npvt` or `.npvs` file to import it into your library.")
+                .size(12.0)
+                .color(p.text),
+        );
+        ui.label(
+            RichText::new(
+                "The association is per-user only (no admin required) and the default action is \
+                 add-to-library, never silent connect.",
+            )
+            .size(10.5)
+            .color(p.muted),
+        );
+        ui.add_space(6.0);
+        let btn_label = if already {
+            "Already associated"
+        } else {
+            "Associate .npvt / .npvs"
+        };
+        let btn_resp = widgets::primary_button(ui, p, btn_label);
+        if btn_resp.clicked() && !already {
+            match assoc::associate() {
+                Ok(()) => {
+                    app.settings.file_assoc = true;
+                    app.persist_settings();
+                    app.toast(ToastKind::Ok, ".npvt / .npvs files are now associated.");
+                }
+                Err(err) => {
+                    app.toast(ToastKind::Error, format!("Association failed: {err}"));
+                }
+            }
+        }
+        if already {
+            ui.label(
+                RichText::new(
+                    "Files are associated. You can remove the association by uninstalling \
+                     or clearing HKCU\\Software\\Classes\\.npvt.",
+                )
+                .size(10.0)
+                .color(p.muted),
+            );
+        }
+    });
 }
 
 fn appearance_card(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
@@ -212,6 +266,51 @@ fn engine_card(app: &mut NpvApp, ui: &mut Ui, p: &Palette) {
             .changed()
         {
             app.persist_settings();
+        }
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(4.0);
+        if ui
+            .checkbox(&mut app.settings.tun_mode, "TUN mode (capture all traffic)")
+            .changed()
+        {
+            app.persist_settings();
+        }
+        if app.settings.tun_mode {
+            ui.label(
+                RichText::new(
+                    "Routes all system traffic through the tunnel via a virtual network adapter. \
+                     Requires administrator privileges.",
+                )
+                .size(10.0)
+                .color(p.warn),
+            );
+            ui.add_space(2.0);
+            ui.label(RichText::new("TUN address (CIDR)").size(11.0).color(p.text));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.settings.tun_address)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(160.0),
+            );
+        }
+        if ui
+            .checkbox(
+                &mut app.settings.kill_switch,
+                "Kill switch (block traffic when disconnected)",
+            )
+            .changed()
+        {
+            app.persist_settings();
+        }
+        if app.settings.kill_switch {
+            ui.label(
+                RichText::new(
+                    "When the tunnel drops, all non-local network traffic is blocked until \
+                     you reconnect or disable the kill switch.",
+                )
+                .size(10.0)
+                .color(p.warn),
+            );
         }
         ui.label(
             RichText::new("The SOCKS inbound and stats port always bind 127.0.0.1 only.")
