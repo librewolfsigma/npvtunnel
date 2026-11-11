@@ -279,12 +279,8 @@ pub fn start_engine(
         .cloned()
         .ok_or_else(|| "the selected profile no longer exists".to_string())?;
 
-    let bin = engine::find_engine_binary(None).ok_or_else(|| {
-        "sing-box engine not found. Put sing-box.exe next to NPVTunnel.exe, in the \
-         npvtunnel data folder under bin\\, or on PATH. Download: \
-         https://github.com/SagerNet/sing-box/releases"
-            .to_string()
-    })?;
+    let missing_engine = "sing-box engine not found. Put sing-box.exe next to NPVTunnel.exe, in the npvtunnel data folder under bin\\, or on PATH. Download: https://github.com/SagerNet/sing-box/releases";
+    let bin = engine::find_engine_binary(None).ok_or_else(|| missing_engine.to_string())?;
 
     shared.set_status(Status::Connecting {
         label: profile.name.clone(),

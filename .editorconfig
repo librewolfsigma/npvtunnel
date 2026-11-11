@@ -28,3 +28,9 @@ indent_size = unset
 
 [Makefile]
 indent_style = tab
+
+# Vendored font license texts keep their original upstream formatting.
+[crates/npvt-gui/assets/fonts/*.txt]
+indent_style = unset
+indent_size = unset
+trim_trailing_whitespace = false
