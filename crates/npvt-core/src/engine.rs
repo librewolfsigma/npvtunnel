@@ -63,6 +63,22 @@ fn transport_block(p: &Profile) -> Option<Value> {
     }
 }
 
+/// Hide the console window that Windows would otherwise allocate for console
+/// subsystem children (sing-box, tasklist, taskkill, reg) spawned by our GUI
+/// binary. Without this flag every engine start would flash a terminal.
+fn hide_console(cmd: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cmd;
+    }
+}
+
 fn user_pass(token: &str) -> Result<(String, String)> {
     let (u, p) = token.split_once(':').ok_or_else(|| {
         Error::InvalidConfig("socks/http credential must be user:password".into())
@@ -265,12 +281,14 @@ pub fn start(bin: &Path, config_path: &Path, log_path: &Path) -> Result<Running>
         .create(true)
         .append(true)
         .open(log_path)?;
-    let child = std::process::Command::new(bin)
-        .arg("run")
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("run")
         .arg("-c")
         .arg(config_path)
         .stdout(log.try_clone()?)
-        .stderr(log)
+        .stderr(log);
+    hide_console(&mut cmd);
+    let child = cmd
         .spawn()
         .map_err(|e| Error::Engine(format!("failed to start engine: {e}")))?;
     Ok(Running { pid: child.id() })
@@ -288,9 +306,10 @@ pub fn alive(pid: u32) -> bool {
         // a substring of another column (e.g. a memory figure) can never be
         // mistaken for a running process.
         let needle = format!("\"{pid}\"");
-        std::process::Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
-            .output()
+        let mut cmd = std::process::Command::new("tasklist");
+        cmd.args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"]);
+        hide_console(&mut cmd);
+        cmd.output()
             .map(|o| {
                 String::from_utf8_lossy(&o.stdout)
                     .lines()
@@ -309,8 +328,10 @@ pub fn alive(pid: u32) -> bool {
 pub fn stop(pid: u32) -> Result<()> {
     #[cfg(windows)]
     {
-        let status = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/F", "/T"])
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/F", "/T"]);
+        hide_console(&mut cmd);
+        let status = cmd
             .status()
             .map_err(|e| Error::Engine(format!("failed to run taskkill: {e}")))?;
         if !status.success() {

@@ -334,6 +334,45 @@ pub fn generate_recipient_keypair() -> ([u8; 32], [u8; 32]) {
     (*secret.as_bytes(), *public.as_bytes())
 }
 
+/// Rebuild a signing key from the stored identity seed (vault identity).
+pub fn signing_key_from_seed(seed: &[u8; 32]) -> SigningKey {
+    SigningKey::from_bytes(seed)
+}
+
+/// Derive the X25519 public key for a stored secret key.
+pub fn x25519_public_from_secret(secret: &[u8; 32]) -> [u8; 32] {
+    PublicKey::from(&StaticSecret::from(*secret)).to_bytes()
+}
+
+/// Base64url-encode a key for display or export.
+pub fn key_to_b64(key: &[u8]) -> String {
+    b64(key)
+}
+
+/// Decode a user-supplied recipient key: base64url or standard, padded or
+/// not, exactly 32 bytes.
+pub fn parse_recipient_key(text: &str) -> Result<[u8; 32]> {
+    let cleaned: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    use base64::Engine as _;
+    let attempts = [
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(cleaned.as_bytes()),
+        base64::engine::general_purpose::URL_SAFE.decode(cleaned.as_bytes()),
+        base64::engine::general_purpose::STANDARD.decode(cleaned.as_bytes()),
+    ];
+    if let Some(bytes) = attempts.into_iter().flatten().next() {
+        if bytes.len() == 32 {
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&bytes);
+            return Ok(key);
+        }
+        return Err(Error::Crypto(format!(
+            "recipient key must be 32 bytes, got {}",
+            bytes.len()
+        )));
+    }
+    Err(Error::Crypto("recipient key is not valid base64".into()))
+}
+
 fn canonical_header(header: &Header) -> Result<Vec<u8>> {
     serde_json::to_vec(header)
         .map_err(|e| Error::Crypto(format!("header serialization failed: {e}")))

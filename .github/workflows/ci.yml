@@ -58,6 +58,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/NPVTunnel.exe dist/
           Copy-Item target/release/npvtunnel.exe dist/
           Copy-Item README.md dist/
           Compress-Archive -Path dist/* -DestinationPath npvtunnel-windows-x64.zip -Force

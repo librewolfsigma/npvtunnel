@@ -4,6 +4,52 @@ All notable changes to npvtunnel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versioning
 follows semver.
 
+## [0.2.0] - 2026-11-12
+
+### Added
+
+- Native Windows GUI crate `npvt-gui` shipping `NPVTunnel.exe`: a
+  GUI-subsystem binary (`#![windows_subsystem = "windows"]`) so double-click
+  never opens a terminal, styled after the NPV Tunnel mobile design and
+  optimized for the desktop window.
+  - HOME: circular power connect/disconnect with animated connecting state,
+    `[ CONNECTED ]` / `[ CONNECTING ]` / `[ DISCONNECTED ]` status, the active
+    connection group card, PING button and live DOWNLINK/UPLINK readouts.
+  - CONFIGS: expandable groups (Smart Route / Saved / Global Network) with
+    inline ping, edit, delete, pin and kebab actions, per-profile latency
+    chips, the Global Network usage bar, a search field, sort menu and the
+    floating pill toolbar with the green FAB.
+  - Add-config menu: subscription URL fetch (base64 or plain), clipboard
+    import, QR-code image import (rqrr), `.npvt`/`.npvs` file import with
+    passphrase/key unlock, manual config entry and connection-group editor.
+  - LOGS: live sing-box engine log with filter, copy, clear and reveal.
+  - MORE: Premium, Light/Dark/Auto appearance (Auto follows the Windows
+    theme via the registry), My public key (X25519 + Ed25519, copyable),
+    Per-app Proxy (allow/deny process rules), Points, Settings (SOCKS port,
+    clash API port, DNS, autoconnect, start-with-Windows) and User assets
+    (geoip/geosite downloads from the official sing-geoip/sing-geosite
+    releases).
+  - Export/share page: Config Filename, Lock it / Keep it open, the Secrecy
+    slider (maps to signed expiry policy), Specific people (recipient X25519
+    keys) or Passphrase delivery, producing signed `.npvt` v2 containers.
+- Connection groups, per-profile traffic usage, settings and the points
+  ledger persist in the npvtunnel data directory (`groups.json`,
+  `settings.json`).
+- Engine control: adopt a running CLI-started engine on launch, background
+  TCP latency sweeps, live traffic sampling from the sing-box clash API, and
+  usage accounting per profile.
+
+### Changed
+
+- The release zip now contains `NPVTunnel.exe` (GUI, headline binary) and
+  `npvtunnel.exe` (CLI) plus the docs.
+- `npvt-core::engine` spawns every child process with `CREATE_NO_WINDOW` on
+  Windows: the GUI no longer risks console flashes when launching sing-box,
+  `tasklist` or `taskkill`.
+- `.npvt` v2 gained key-helper APIs (`signing_key_from_seed`,
+  `x25519_public_from_secret`, `key_to_b64`, `parse_recipient_key`) to serve
+  the GUI's share/export flows.
+
 ## [0.1.1] - 2026-11-11
 
 ### Fixed

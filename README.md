@@ -1,9 +1,16 @@
 # NPVTunnel (npvtunnel)
 
 A lightweight, security-hardened client for the `.npvt` configuration
-ecosystem, built for Windows. CLI-first, native, no ads, no telemetry.
+ecosystem, built for Windows. Native GUI, no ads, no telemetry.
 
-- **Command:** `npvtunnel` — import, export, lock, share, list, connect.
+- **GUI (`NPVTunnel.exe`):** double-click and go - a console-free,
+  windows-subsystem binary with the dark green NPV Tunnel interface:
+  HOME (power button, connection status, active group card, live
+  downlink/uplink), CONFIGS (groups, pings, usage, import), LOGS
+  (live engine output) and MORE (appearance, keys, per-app proxy,
+  points, settings, geo assets).
+- **CLI (`npvtunnel`):** the same vault from a terminal - import, export,
+  lock, share, list, connect.
 - **File experience:** `.npvt` / `.npvs` files and `npvt://` links import
   through a security card; the default action is *add to library*, never
   silent connect.
@@ -13,15 +20,15 @@ ecosystem, built for Windows. CLI-first, native, no ads, no telemetry.
   NPVTunnel refuses to reimplement it and imports plaintext v1 files only.
 - **Engine:** sing-box sidecar (local SOCKS5 on `127.0.0.1`, never
   LAN-exposed by default).
-- **Status:** Phase 1 build — core + CLI. GUI, TUN mode, kill switch,
-  per-process routing and the file-association installer are the next
-  milestones (see roadmap).
+- **Status:** Phase 2 build - core + CLI + native GUI. TUN mode, kill switch
+  and the file-association installer are the next milestones (see roadmap).
 
 ## Tech stack
 
 | Layer | Choice |
 |-------|--------|
 | Language | Rust (edition 2021, MSRV 1.85), `#![forbid(unsafe_code)]` workspace-wide |
+| GUI | `egui`/`eframe` 0.29 (GPU glow backend), embedded JetBrains Mono + Roboto fonts, painter-drawn icons, windows-subsystem binary (no console on double-click) |
 | CLI | `clap` 4 (derive) verb-first interface, stable exit codes, `clap_complete` shell completions |
 | Container crypto | Argon2id (64 MiB, t=3, p=4) KDF, XChaCha20-Poly1305 AEAD, X25519 multi-recipient locks, HKDF-SHA256, Ed25519 `verify_strict` signatures |
 | Vault | JSON on disk, atomic writes, Unix `0600`, `zeroize` on drop |
@@ -35,7 +42,8 @@ Requires Rust 1.85+ (stable).
 
 ```sh
 cargo build --release
-# binary: target/release/npvtunnel(.exe)
+# GUI binary:  target/release/NPVTunnel(.exe)
+# CLI binary:  target/release/npvtunnel(.exe)
 ```
 
 CI builds and tests the Windows x64 release binary on every push; pushing a
@@ -70,6 +78,25 @@ npvtunnel doctor
 
 Exit codes are stable: `0` ok, `1` usage, `2` config, `3` network/engine,
 `4` permission, `5` crypto, `6` io, `7` other.
+
+## GUI quick start
+
+1. Download `npvtunnel-windows-x64-<tag>.zip` from the Releases page and
+   unzip it next to `sing-box.exe` (from the
+   [sing-box releases](https://github.com/SagerNet/sing-box/releases)).
+2. Double-click `NPVTunnel.exe`. No console window appears - the binary is a
+   GUI-subsystem executable and every helper process it spawns is created
+   with `CREATE_NO_WINDOW`.
+3. **CONFIGS > +** imports configs: subscription URL, clipboard, QR code
+   image, `.npvt`/`.npvs` files, or manual entry. **New connection group**
+   builds Smart Route / Round robin / Manual groups.
+4. Press the power button on HOME. `[ CONNECTED ]` appears and the card shows
+   live downlink/uplink from the engine's clash API.
+5. Group rows support pinning, per-group ping sweeps (speed icon), editing,
+   deletion and *Export / share* (signed `.npvt` v2 containers: open,
+   passphrase-locked or key-locked to recipient keys).
+6. Closing the window leaves the tunnel running; the next launch re-adopts
+   the engine. Stop it from HOME or the CLI with `npvtunnel disconnect`.
 
 ## Security posture
 
