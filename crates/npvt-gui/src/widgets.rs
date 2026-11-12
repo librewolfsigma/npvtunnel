@@ -32,20 +32,6 @@ pub fn card(
     (rect, response)
 }
 
-/// Paint the whole UI content of a card via painter coordinates.
-pub fn card_frame(
-    ui: &mut egui::Ui,
-    palette: Palette,
-    height: f32,
-    fill: Color32,
-    border: Stroke,
-    paint: impl FnOnce(&egui::Painter, Rect),
-) -> egui::Response {
-    let (rect, response) = card(ui, palette, height, Some(fill), Some(border));
-    paint(ui.painter(), rect);
-    response
-}
-
 pub fn label_at(
     painter: &Painter,
     anchor: egui::Align2,
@@ -627,24 +613,6 @@ pub fn divider(ui: &mut egui::Ui, palette: Palette) {
         Stroke::new(1.0, palette.border),
     ));
     ui.add_space(8.0);
-}
-
-/// Circular floating button (the big green "+" on configs).
-pub fn round_button(
-    ui: &mut egui::Ui,
-    rect: Rect,
-    bg: Color32,
-    fg: Color32,
-    draw: fn(&icons::IconCtx),
-    id_seed: &str,
-) -> bool {
-    let painter = ui.painter();
-    let resp = ui
-        .interact(rect, egui::Id::new(id_seed), Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    painter.circle_filled(rect.center(), rect.width() / 2.0, bg);
-    icons::paint_with(painter, rect.shrink(rect.width() * 0.26), fg, draw, 2.4);
-    resp.clicked()
 }
 
 /// Arc helper used by dials (kept for future gauges).

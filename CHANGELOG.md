@@ -124,7 +124,8 @@ follows semver.
   `npvtunnel-windows-x64-<tag>.zip` with `SHA256SUMS.txt` and publishes the
   GitHub Release via the preinstalled `gh` CLI.
 
-## [0.2.0] - 2026-11-11
+## [0.2.0] - 2026-11-11 (CLI-only interim)
+
 
 ### Added
 

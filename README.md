@@ -26,15 +26,22 @@ ecosystem, built for Windows. Native GUI, no ads, no telemetry.
 ## Tech stack
 
 | Layer | Choice |
-|-------|--------|
-| Language | Rust (edition 2021, MSRV 1.85), `#![forbid(unsafe_code)]` workspace-wide |
-| GUI | `egui`/`eframe` 0.29 (GPU glow backend), embedded JetBrains Mono + Roboto fonts, painter-drawn icons, windows-subsystem binary (no console on double-click) |
-| CLI | `clap` 4 (derive) verb-first interface, stable exit codes, `clap_complete` shell completions |
-| Container crypto | Argon2id (64 MiB, t=3, p=4) KDF, XChaCha20-Poly1305 AEAD, X25519 multi-recipient locks, HKDF-SHA256, Ed25519 `verify_strict` signatures |
-| Vault | JSON on disk, atomic writes, Unix `0600`, `zeroize` on drop |
-| Engine | sing-box sidecar rendering vless / vmess / trojan / shadowsocks / hysteria2 / socks / http outbounds; SOCKS5 inbound bound to `127.0.0.1` |
-| Windows binary | `x86_64-pc-windows-msvc`, statically linked CRT (`+crt-static`), thin LTO, stripped |
-| CI / release | master-ci v2 (fmt, clippy, cargo-deny, cargo-machete, tests), CodeQL (rust), gitleaks, zizmor, Dependabot; tag-triggered `release.yml` publishes the Windows zip + `SHA256SUMS.txt` via the `gh` CLI |
+| ------ | ------ |
+| Language | Rust (edition 2021, MSRV 1.85), no unsafe |
+| GUI | egui/eframe 0.29, glow backend, painter-drawn icons |
+| GUI fonts | Bundled Inter + JetBrains Mono (OFL, see THIRD-PARTY) |
+| GUI binary | `windows` subsystem - no console on double-click |
+| CLI | clap 4 verb-first, stable exit codes, shell completions |
+| Crypto | Argon2id, XChaCha20-Poly1305, X25519 locks, Ed25519 sigs |
+| Vault | JSON on disk, atomic writes, Unix 0600, zeroize |
+| Engine | sing-box sidecar, SOCKS5 bound to 127.0.0.1 |
+| Windows | msvc, static CRT, thin LTO, stripped |
+| CI | master-ci v2, CodeQL, gitleaks, tag releases via gh |
+| Engine | sing-box sidecar; SOCKS5 inbound bound to 127.0.0.1 |
+| Engine protocols | vless, vmess, trojan, shadowsocks, hysteria2, socks, http |
+| Windows binary | msvc target, static CRT (`+crt-static`), thin LTO, stripped |
+| CI / release | master-ci v2, CodeQL (rust), gitleaks, zizmor, Dependabot |
+| Release artifacts | `release.yml` publishes the zip + `SHA256SUMS.txt` via gh |
 
 ## Build
 
@@ -152,11 +159,12 @@ crates/npvt-cli    the npvtunnel binary
 ## Roadmap
 
 | Phase | Scope |
-|-------|-------|
-| P1 (this) | Core + CLI: import/export/lock/share/list/connect, v2 crypto, vault, sing-box sidecar |
-| P2 | Tray-first GUI, wintun TUN mode, kill switch, per-process routing, .npvt file association |
-| P3 | Hardening: fuzzing, threat-model review, signed updater, AV pre-submissions |
-| P4/P5 | Seller closed beta, performance budgets, GA channels (winget/MSI) |
+| ------ | ------ |
+| P1 (done) | Core + CLI: import/export/lock/share/list/connect, v2 crypto |
+| P2 (done) | Native GUI: vault, groups, engine control, sheets |
+| P3 | wintun TUN mode, kill switch, per-process routing, file association |
+| P4 | Hardening: fuzzing, threat-model review, signed updater, AV |
+| P5 | Beta + GA channels (winget/MSI) |
 
 ## License
 
