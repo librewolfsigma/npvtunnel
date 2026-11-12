@@ -41,7 +41,7 @@ ecosystem, built for Windows. Native GUI, no ads, no telemetry.
 | Engine protocols | vless, vmess, trojan, shadowsocks, hysteria2, socks, http |
 | Windows binary | msvc target, static CRT (`+crt-static`), thin LTO, stripped |
 | CI / release | master-ci v2, CodeQL (rust), gitleaks, zizmor, Dependabot |
-| Release artifacts | `release.yml` publishes the zip + `SHA256SUMS.txt` via gh |
+| Release artifacts | release.yml publishes zip + SHA256SUMS via gh |
 
 ## Build
 
@@ -151,7 +151,7 @@ Re-export such configs as v2 containers ( creators: `npvtunnel export`).
 
 ## Workspace layout
 
-```
+```text
 crates/npvt-core   profiles, URI import, .npvt v2 container, vault, engine glue
 crates/npvt-cli    the npvtunnel binary
 ```

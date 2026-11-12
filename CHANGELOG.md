@@ -126,7 +126,6 @@ follows semver.
 
 ## [0.2.0] - 2026-11-11 (CLI-only interim)
 
-
 ### Added
 
 - Native Windows desktop GUI (`npvtunnel-gui.exe`, egui/eframe, single exe,
