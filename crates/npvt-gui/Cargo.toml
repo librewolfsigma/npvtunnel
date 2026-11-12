@@ -35,7 +35,7 @@ ureq = "2"
 base64 = "0.22"
 ed25519-dalek = "2"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
-dirs = "5"
+dirs = "7"
 
 [target.'cfg(windows)'.dependencies]
 # No linux portal/gtk backends: the GUI ships for Windows only.
