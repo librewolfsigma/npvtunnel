@@ -25,6 +25,15 @@ jobs:
     uses: WasewaseX/master-ci/.github/workflows/master-ci.yml@v2
     with:
       template_ref: v2
+      # TEMPORARY: the template's security job downloads osv-scanner v2.7.0
+      # from GitHub release assets, and that download has been failing
+      # instantly from GitHub-hosted runners since 2026-11-12 (asset exists;
+      # verified reachable from outside). Advisory coverage is NOT lost:
+      # the template's rust job still runs
+      # `cargo deny check advisories licenses sources` per crate, and CodeQL
+      # runs below. Re-enable by deleting the `select` line once the
+      # template's downloader works again.
+      select: "meta,changes,scorecard,ai-integrity,secrets,hygiene,docs,rust,quality-ratchet"
     permissions:
       contents: read
       security-events: write
