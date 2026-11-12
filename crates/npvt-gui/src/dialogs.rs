@@ -1,1512 +1,1208 @@
-//! Every modal dialog, including the "Add config" menu of reference image 4:
-//! subscription, clipboard, QR code, .npvs/.npvt file import, manual config
-//! and new connection group. Plus Premium, Points, Settings, Per-app Proxy,
-//! My public key, User assets and the confirmations.
-//!
-//! Pattern: each dialog keeps its draft fields in the `Dialog` variant; the
-//! closure mutates the local draft and the end of the function writes the
-//! updated draft back unless the dialog decided to close.
+//! Modal dialogs: the "Add config" sheet from the reference design, the
+//! export sheet (lock / secrecy / delivery), settings, per-app proxy, keys,
+//! premium/points/about and confirmation prompts. Implemented as methods on
+//! `App`.
 
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use eframe::egui::{self, Color32, FontId, Sense, Vec2, Widget as _};
 
-use egui::Color32;
-
-use npvt_core::profile::{new_profile_id, unix_now, Credential, Profile, Protocol, Transport};
-use npvt_core::uri;
-use npvt_core::vault::upsert_profile;
-
-use crate::app::{App, Dialog, KebabKind, ManualDraft, SortKey};
-use crate::data::{self, import_profiles, Group, GroupMode};
-use crate::icons::{self, Icon};
-use crate::net::{self, DownloadState, GEOIP_URL, GEOSITE_URL};
+use crate::app::{App, Modal, ModalState};
+use crate::icons;
 use crate::theme::{self, Palette};
-use crate::widgets::{fill_button, menu_item, modal, modal_header, radio_row, tracked_label};
+use crate::vault_actions;
+use crate::widgets;
 
-pub fn show(app: &mut App, ctx: &egui::Context) {
-    let p = app.palette;
-    if matches!(app.dialog, Dialog::Closed) {
-        return;
-    }
-    let dialog = std::mem::take(&mut app.dialog);
-    app.dialog = draw_dialog(app, ctx, &p, dialog);
+/// What a dialog's footer buttons decided this frame.
+#[derive(PartialEq, Eq)]
+enum Action {
+    None,
+    Confirm,
+    Cancel,
 }
 
-fn draw_dialog(app: &mut App, ctx: &egui::Context, p: &Palette, dialog: Dialog) -> Dialog {
-    match dialog {
-        Dialog::Closed => Dialog::Closed,
-        Dialog::AddMenu => add_menu(app, ctx, p),
-        Dialog::AddSubscription { url, busy } => add_subscription(app, ctx, p, url, busy),
-        Dialog::Manual(draft) => manual_dialog(app, ctx, p, draft, None),
-        Dialog::EditProfile { profile_id, draft } => {
-            manual_dialog(app, ctx, p, draft, Some(profile_id))
+fn footer(ui: &mut egui::Ui, p: Palette, busy: bool, confirm_label: &str) -> Action {
+    let mut action = Action::None;
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let confirm = egui::Button::new(
+            egui::RichText::new(if busy { "Working..." } else { confirm_label })
+                .color(p.accent)
+                .font(theme::semibold(13.5)),
+        )
+        .fill(p.surface_hi)
+        .stroke(egui::Stroke::new(1.0, p.border_sel))
+        .rounding(egui::Rounding::same(10.0));
+        if ui.add_enabled(!busy, confirm).clicked() {
+            action = Action::Confirm;
         }
-        Dialog::NewGroup { name, mode } => new_group(app, ctx, p, name, mode),
-        Dialog::EditGroup {
-            group_id,
-            name,
-            mode,
-            members,
-        } => edit_group(app, ctx, p, &group_id, name, mode, members),
-        Dialog::Rename { group_id, name } => rename_dialog(app, ctx, p, &group_id, name),
-        Dialog::ConfirmDeleteGroup { group_id } => confirm_delete_group(app, ctx, p, &group_id),
-        Dialog::ConfirmDeleteProfile { profile_id } => {
-            confirm_delete_profile(app, ctx, p, &profile_id)
+        if ui
+            .add(egui::Button::new(
+                egui::RichText::new("Cancel").color(p.text_secondary),
+            ))
+            .clicked()
+        {
+            action = Action::Cancel;
         }
-        Dialog::ImportFile {
-            path,
-            lock_kind,
-            passphrase,
-            error,
-        } => import_file(app, ctx, p, &path, &lock_kind, passphrase, error),
-        Dialog::Premium => premium(app, ctx, p),
-        Dialog::Points { watching } => points(app, ctx, p, watching),
-        Dialog::SettingsDlg => settings_dialog(app, ctx, p),
-        Dialog::PerApp { mode, processes } => per_app(app, ctx, p, mode, processes),
-        Dialog::PublicKey => public_key(app, ctx, p),
-        Dialog::UserAssets {
-            geoip,
-            geosite,
-            geoip_cancel,
-            geosite_cancel,
-        } => user_assets(app, ctx, p, geoip, geosite, geoip_cancel, geosite_cancel),
-        Dialog::Kebab { group_id, kind } => kebab_menu(app, ctx, p, &group_id, kind),
-        Dialog::SortMenu => sort_menu(app, ctx, p),
-        Dialog::EngineMissing { message } => engine_missing(app, ctx, p, &message),
-    }
+    });
+    action
 }
 
-// ---- Add config menu (image 4) -----------------------------------------------
+fn footer_custom(
+    ui: &mut egui::Ui,
+    p: Palette,
+    confirm_label: &str,
+    confirm_color: Color32,
+) -> Action {
+    let mut action = Action::None;
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let confirm = egui::Button::new(
+            egui::RichText::new(confirm_label)
+                .color(confirm_color)
+                .font(theme::semibold(13.5)),
+        )
+        .fill(p.surface)
+        .stroke(egui::Stroke::new(1.0, confirm_color))
+        .rounding(egui::Rounding::same(10.0));
+        if ui.add(confirm).clicked() {
+            action = Action::Confirm;
+        }
+        if ui
+            .add(egui::Button::new(
+                egui::RichText::new("Cancel").color(p.text_secondary),
+            ))
+            .clicked()
+        {
+            action = Action::Cancel;
+        }
+    });
+    action
+}
 
-fn add_menu(app: &mut App, ctx: &egui::Context, p: &Palette) -> Dialog {
-    let mut next = Dialog::Closed;
-    modal(ctx, p, "add-menu", 350.0, |ui| {
-        ui.label(theme::sans_bold("Add config", 19.0, p.text));
-        ui.add_space(8.0);
+impl App {
+    /// Draw the active modal (if any). Returns true when it stays open.
+    pub fn draw_modal(&mut self, ctx: &egui::Context) -> bool {
+        let Some(modal) = self.modal.clone() else {
+            return false;
+        };
+        let p = self.palette;
+        match modal {
+            Modal::AddConfig => widgets::modal(ctx, p, "add-config", 360.0, 430.0, |ui| {
+                self.add_config_dialog(ui)
+            }),
+            Modal::Subscription => widgets::modal(ctx, p, "subscription", 390.0, 320.0, |ui| {
+                self.subscription_dialog(ui)
+            }),
+            Modal::ManualAdd => {
+                widgets::modal(ctx, p, "manual", 390.0, 380.0, |ui| self.manual_dialog(ui))
+            }
+            Modal::NewGroup => widgets::modal(ctx, p, "new-group", 340.0, 220.0, |ui| {
+                self.new_group_dialog(ui)
+            }),
+            Modal::Sort => widgets::modal(ctx, p, "sort", 300.0, 240.0, |ui| self.sort_dialog(ui)),
+            Modal::Passphrase => widgets::modal(ctx, p, "passphrase", 380.0, 300.0, |ui| {
+                self.passphrase_dialog(ui)
+            }),
+            Modal::Export { .. } => {
+                widgets::modal(ctx, p, "export", 440.0, 660.0, |ui| self.export_dialog(ui))
+            }
+            Modal::RenameGroup { .. } => {
+                widgets::modal(ctx, p, "rename-group", 340.0, 200.0, |ui| {
+                    self.rename_group_dialog(ui)
+                })
+            }
+            Modal::EditProfile { .. } => {
+                widgets::modal(ctx, p, "edit-profile", 380.0, 380.0, |ui| {
+                    self.edit_profile_dialog(ui)
+                })
+            }
+            Modal::ConfirmDeleteProfile { .. } => {
+                widgets::modal(ctx, p, "del-profile", 340.0, 220.0, |ui| {
+                    self.delete_profile_dialog(ui)
+                })
+            }
+            Modal::ConfirmDeleteGroup { .. } => {
+                widgets::modal(ctx, p, "del-group", 340.0, 220.0, |ui| {
+                    self.delete_group_dialog(ui)
+                })
+            }
+            Modal::Settings => widgets::modal(ctx, p, "settings", 430.0, 640.0, |ui| {
+                self.settings_dialog(ui)
+            }),
+            Modal::PerApp => widgets::modal(ctx, p, "per-app", 430.0, 560.0, |ui| {
+                self.per_app_dialog(ui)
+            }),
+            Modal::PublicKey => widgets::modal(ctx, p, "pubkey", 440.0, 320.0, |ui| {
+                self.public_key_dialog(ui)
+            }),
+            Modal::Premium => widgets::modal(ctx, p, "premium", 380.0, 250.0, |ui| {
+                self.premium_dialog(ui)
+            }),
+            Modal::Points => {
+                widgets::modal(ctx, p, "points", 380.0, 230.0, |ui| self.points_dialog(ui))
+            }
+            Modal::Assets => {
+                widgets::modal(ctx, p, "assets", 430.0, 360.0, |ui| self.assets_dialog(ui))
+            }
+            Modal::About => {
+                widgets::modal(ctx, p, "about", 400.0, 250.0, |ui| self.about_dialog(ui))
+            }
+        }
+    }
 
-        menu_item(ui, p, Icon::Rss, "Add subscription", || {
-            next = Dialog::AddSubscription {
-                url: String::new(),
-                busy: false,
-            };
-        });
-        menu_item(
-            ui,
-            p,
-            Icon::Clipboard,
-            "Import config from Clipboard",
-            || {
-                import_clipboard(app);
-            },
+    fn add_config_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Add config")
+                .font(theme::bold(19.0))
+                .color(p.text),
         );
-        menu_item(ui, p, Icon::Qr, "Import config from QR Code", || {
-            import_qr(app);
-        });
-        menu_item(
-            ui,
-            p,
-            Icon::Download,
-            "Import config file (.npvs / .npvt)",
-            || {
-                pick_config_file(app);
-            },
-        );
-        menu_item(ui, p, Icon::Plus, "Add config manually", || {
-            next = Dialog::Manual(ManualDraft::new());
-        });
-        menu_item(ui, p, Icon::Cluster, "New connection group", || {
-            next = Dialog::NewGroup {
-                name: String::new(),
-                mode: 0,
-            };
-        });
-
+        ui.add_space(14.0);
+        let rows: [(icons::IconFn, &str); 6] = [
+            (icons::rss, "Add subscription"),
+            (icons::clipboard, "Import config from Clipboard"),
+            (icons::qr, "Import config from QR Code"),
+            (icons::download, "Import config file (.npvs / .npvt)"),
+            (icons::plus, "Add config manually"),
+            (icons::new_group_icon, "New connection group"),
+        ];
+        let mut picked = None;
+        for (i, (draw, label)) in rows.into_iter().enumerate() {
+            let (rect, resp) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
+            let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+            let painter = ui.painter();
+            if resp.hovered() {
+                painter.rect_filled(rect, 8.0, p.surface);
+            }
+            let icon_rect = egui::Rect::from_center_size(
+                egui::Pos2::new(rect.left() + 20.0, rect.center().y),
+                Vec2::splat(22.0),
+            );
+            icons::paint_with(
+                painter,
+                icon_rect,
+                p.text_secondary,
+                draw,
+                icons::ICON_STROKE,
+            );
+            widgets::label_at(
+                painter,
+                egui::Align2::LEFT_CENTER,
+                egui::Pos2::new(rect.left() + 44.0, rect.center().y),
+                label,
+                FontId::new(14.0, egui::FontFamily::Proportional),
+                p.text,
+            );
+            if resp.clicked() {
+                picked = Some(i);
+            }
+            ui.add_space(2.0);
+        }
         ui.add_space(6.0);
+        let mut action = Action::None;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
-                .add(
-                    egui::Button::new(theme::mono_med("Cancel", 13.0, p.green))
-                        .fill(Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE),
-                )
+                .add(egui::Button::new(
+                    egui::RichText::new("Cancel")
+                        .color(p.accent)
+                        .font(theme::semibold(13.5)),
+                ))
                 .clicked()
             {
-                next = Dialog::Closed;
+                action = Action::Cancel;
             }
         });
-    });
-    next
-}
-
-// ---- Import implementations ----------------------------------------------------
-
-fn import_clipboard(app: &mut App) {
-    let text = match arboard::Clipboard::new().and_then(|mut c| c.get_text()) {
-        Ok(t) => t,
-        Err(e) => {
-            app.toasts.error(format!("Clipboard unavailable: {e}"));
+        if action == Action::Cancel {
+            self.close_modal();
             return;
         }
-    };
-    let mut profiles = Vec::new();
-    let mut errors = 0usize;
-    for line in data::decode_subscription(&text) {
-        match uri::parse_import(&line) {
-            Ok(uri::ImportSource::Profile(prof)) => profiles.push(prof),
-            _ => errors += 1,
-        }
-    }
-    let report = import_profiles(&mut app.data, profiles);
-    app.save_all();
-    if report.added + report.replaced > 0 {
-        app.toasts.show(report.summary());
-    } else {
-        app.toasts
-            .error(format!("Nothing importable found ({errors} invalid)"));
-    }
-}
-
-fn import_qr(app: &mut App) {
-    let Some(path) = crate::pick::pick_image() else {
-        return;
-    };
-    let img = match image::open(&path) {
-        Ok(img) => img,
-        Err(e) => {
-            app.toasts.error(format!("Cannot read image: {e}"));
-            return;
-        }
-    };
-    let luma = img.to_luma8();
-    let mut profiles = Vec::new();
-    let mut prepared = rqrr::PreparedImage::prepare(luma);
-    for grid in prepared.detect_grids() {
-        if let Ok((_, content)) = grid.decode() {
-            if let Ok(uri::ImportSource::Profile(prof)) = uri::parse_import(&content) {
-                profiles.push(prof);
+        match picked {
+            Some(0) => self.open_modal(Modal::Subscription),
+            Some(1) => {
+                self.close_modal();
+                self.import_clipboard();
             }
-        }
-    }
-    let report = import_profiles(&mut app.data, profiles);
-    app.save_all();
-    if report.added + report.replaced > 0 {
-        app.toasts.show(report.summary());
-    } else {
-        app.toasts.error("No usable QR code found in that image");
-    }
-}
-
-fn pick_config_file(app: &mut App) {
-    let Some(path) = crate::pick::pick_config() else {
-        return;
-    };
-    open_config_file(app, &path);
-}
-
-/// Read a config file and import it, asking for a passphrase when needed.
-pub fn open_config_file(app: &mut App, path: &std::path::Path) {
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            app.toasts.error(format!("Cannot read file: {e}"));
-            return;
-        }
-    };
-    if bytes.starts_with(npvt_core::npvt::v2::MAGIC) {
-        let lock_kind = npvt_core::npvt::v2::peek_lock(&bytes)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|e| format!("error: {e}"));
-        if lock_kind == "open" {
-            decode_container(app, &bytes, None);
-        } else {
-            app.dialog = Dialog::ImportFile {
-                path: path.display().to_string(),
-                lock_kind,
-                passphrase: String::new(),
-                error: None,
-            };
-        }
-        return;
-    }
-    // Legacy v1 or a plain text link / JSON profile.
-    match npvt_core::npvt::v1::import_best_effort(&bytes) {
-        Ok(prof) => {
-            let report = import_profiles(&mut app.data, vec![prof]);
-            app.save_all();
-            app.toasts.show(report.summary());
-        }
-        Err(_) => {
-            let text = String::from_utf8_lossy(&bytes);
-            let mut profiles = Vec::new();
-            for line in data::decode_subscription(&text) {
-                if let Ok(uri::ImportSource::Profile(prof)) = uri::parse_import(&line) {
-                    profiles.push(prof);
-                }
+            Some(2) => {
+                self.close_modal();
+                self.import_qr();
             }
-            if profiles.is_empty() {
-                if let Ok(uri::ImportSource::Profile(prof)) = uri::parse_import(text.trim()) {
-                    profiles.push(prof);
-                }
+            Some(3) => {
+                self.close_modal();
+                self.import_file_dialog();
             }
-            let report = import_profiles(&mut app.data, profiles);
-            app.save_all();
-            if report.added + report.replaced > 0 {
-                app.toasts.show(report.summary());
-            } else {
-                app.toasts.error("Unsupported file format");
-            }
+            Some(4) => self.open_modal(Modal::ManualAdd),
+            Some(5) => self.open_modal(Modal::NewGroup),
+            _ => {}
         }
     }
-}
 
-fn decode_container(app: &mut App, bytes: &[u8], passphrase: Option<&str>) -> bool {
-    let unlock = match passphrase {
-        Some(p) => npvt_core::npvt::v2::Unlock::Passphrase(p),
-        None => npvt_core::npvt::v2::Unlock::Any,
-    };
-    match npvt_core::npvt::v2::decode(bytes, unlock) {
-        Ok(decoded) => {
-            let mut prof = decoded.profile;
-            if let Some(hint) = &decoded.policy.group_hint {
-                if prof.group.is_none() {
-                    prof.group = Some(hint.clone());
-                }
-            }
-            let creator = decoded
-                .verification
-                .creator
-                .clone()
-                .unwrap_or_else(|| "unsigned".into());
-            let report = import_profiles(&mut app.data, vec![prof]);
-            app.save_all();
-            app.toasts.show(format!(
-                "{} · creator {}",
-                report.summary(),
-                &creator[..creator.len().min(12)]
-            ));
-            true
-        }
-        Err(npvt_core::Error::CryptoAuth) => {
-            app.toasts
-                .error("Unlock failed: wrong passphrase or tampered file");
-            false
-        }
-        Err(e) => {
-            app.toasts.error(format!("Import failed: {e}"));
-            false
-        }
-    }
-}
-
-// ---- Subscription dialog -----------------------------------------------------
-
-fn add_subscription(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    url: String,
-    _busy: bool,
-) -> Dialog {
-    let mut url = url;
-    let mut next = Dialog::AddSubscription {
-        url: url.clone(),
-        busy: false,
-    };
-    modal(ctx, p, "subscription", 380.0, |ui| {
-        if modal_header(ui, p, "Add subscription", Some("Cancel")) {
-            next = Dialog::Closed;
-            return;
-        }
-        ui.label(theme::sans(
-            "Fetch a list of config links from a URL.",
-            11.5,
-            p.text_dim,
-        ));
-        ui.add_space(6.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut url)
-                .hint_text("https://example.com/sub")
-                .desired_width(ui.available_width())
-                .font(egui::TextStyle::Monospace),
+    fn subscription_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Add subscription")
+                .font(theme::bold(19.0))
+                .color(p.text),
         );
         ui.add_space(8.0);
-        if fill_button(ui, p, "Fetch and import", !url.trim().is_empty()).clicked() {
-            let target = url.trim().to_string();
-            match net::fetch_text(&target) {
-                Ok(body) => {
-                    let lines = data::decode_subscription(&body);
-                    let mut profiles = Vec::new();
-                    let mut locked = 0usize;
-                    for line in lines {
-                        match uri::parse_import(&line) {
-                            Ok(uri::ImportSource::Profile(prof)) => profiles.push(prof),
-                            Ok(uri::ImportSource::Container(_)) => locked += 1,
-                            Err(_) => {}
-                        }
-                    }
-                    let report = import_profiles(&mut app.data, profiles);
-                    app.save_all();
-                    if report.added + report.replaced > 0 {
-                        app.toasts
-                            .show(format!("{} ({locked} locked skipped)", report.summary()));
-                        next = Dialog::Closed;
-                    } else {
-                        app.toasts
-                            .error("The subscription contained no importable links");
-                    }
-                }
-                Err(e) => app.toasts.error(format!("Fetch failed: {e}")),
-            }
-        }
-    });
-    match next {
-        Dialog::Closed => Dialog::Closed,
-        _ => Dialog::AddSubscription {
-            url: url.clone(),
-            busy: false,
-        },
-    }
-}
-
-// ---- Manual config dialog ------------------------------------------------------
-
-const TRANSPORTS: [&str; 5] = ["plain", "tls", "ws", "grpc", "h2"];
-
-fn manual_dialog(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    draft: ManualDraft,
-    editing: Option<String>,
-) -> Dialog {
-    let mut draft = draft;
-    let mut closed = false;
-    // created_at is preserved when editing an existing profile.
-    let created_at = editing
-        .as_deref()
-        .and_then(|id| app.data.profiles.iter().find(|prof| prof.id == id))
-        .map(|prof| prof.created_at)
-        .unwrap_or_else(unix_now);
-    let title = if editing.is_some() {
-        "Edit config"
-    } else {
-        "Add config manually"
-    };
-    modal(ctx, p, "manual", 420.0, |ui| {
-        if modal_header(ui, p, title, Some("Cancel")) {
-            closed = true;
-            return;
-        }
-        let w = ui.available_width();
-        field(ui, p, "Name", &mut draft.name, w);
-        ui.horizontal(|ui| {
-            ui.label(theme::sans_med("Protocol", 12.0, p.text_dim));
-            egui::ComboBox::from_id_salt("proto")
-                .selected_text(Protocol::ALL[draft.protocol_idx].as_str())
-                .show_ui(ui, |ui| {
-                    for (i, proto) in Protocol::ALL.iter().enumerate() {
-                        ui.selectable_value(&mut draft.protocol_idx, i, proto.as_str());
-                    }
-                });
-            ui.label(theme::sans_med("Transport", 12.0, p.text_dim));
-            egui::ComboBox::from_id_salt("transport")
-                .selected_text(TRANSPORTS[draft.transport_idx])
-                .show_ui(ui, |ui| {
-                    for (i, t) in TRANSPORTS.iter().enumerate() {
-                        ui.selectable_value(&mut draft.transport_idx, i, (*t).to_string());
-                    }
-                });
-        });
-        ui.horizontal(|ui| {
-            ui.label(theme::sans_med("Server", 12.0, p.text_dim));
-            ui.add(
-                egui::TextEdit::singleline(&mut draft.server)
-                    .desired_width(w * 0.5)
-                    .font(egui::TextStyle::Monospace),
-            );
-            ui.label(theme::sans_med("Port", 12.0, p.text_dim));
-            ui.add(
-                egui::TextEdit::singleline(&mut draft.port)
-                    .desired_width(64.0)
-                    .font(egui::TextStyle::Monospace),
-            );
-        });
-        field(
-            ui,
-            p,
-            "Credential (UUID / password / user:pass)",
-            &mut draft.cred,
-            w,
-        );
-        let proto = Protocol::ALL[draft.protocol_idx];
-        if proto == Protocol::Shadowsocks {
-            field(ui, p, "Cipher (e.g. aes-256-gcm)", &mut draft.ss_method, w);
-        }
-        if draft.transport_idx >= 1 {
-            field(ui, p, "TLS SNI / host", &mut draft.sni, w);
-            if draft.transport_idx >= 2 {
-                field(ui, p, "Path / service name", &mut draft.path, w);
-            }
-        }
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut draft.udp, "UDP relay");
-            ui.checkbox(&mut draft.insecure, "Skip TLS verify");
-        });
+        field_label(ui, p, "Subscription URL");
+        egui::TextEdit::singleline(&mut self.ms.sub_url)
+            .hint_text("https://example.com/sub")
+            .desired_width(ui.available_width())
+            .ui(ui);
         ui.add_space(6.0);
-        if fill_button(
-            ui,
-            p,
-            if editing.is_some() {
-                "Save changes"
-            } else {
-                "Add config"
-            },
-            true,
-        )
-        .clicked()
-        {
-            match build_profile(&draft, editing.as_deref(), created_at) {
-                Ok(prof) => {
-                    let _ = upsert_profile(&mut app.data, prof);
-                    app.save_all();
-                    app.toasts.show("Config saved");
-                    closed = true;
+        field_label(ui, p, "Group name");
+        egui::TextEdit::singleline(&mut self.ms.sub_group)
+            .hint_text("Global Network")
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(12.0);
+        match footer(ui, p, self.ms.sub_busy, "Add subscription") {
+            Action::Confirm => {
+                let url = self.ms.sub_url.trim().to_owned();
+                let group = self.ms.sub_group.trim().to_owned();
+                if url.is_empty() || group.is_empty() {
+                    self.toast_now("URL and group name are required");
+                } else {
+                    self.ms.sub_busy = true;
+                    self.fetch_subscription_async(url, group);
                 }
-                Err(e) => app.toasts.error(format!("Invalid: {e}")),
             }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
         }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::Manual(draft)
     }
-}
 
-fn field(ui: &mut egui::Ui, p: &Palette, label: &str, value: &mut String, width: f32) {
-    ui.label(theme::sans_med(label, 12.0, p.text_dim));
-    ui.add(
-        egui::TextEdit::singleline(value)
-            .desired_width(width)
-            .font(egui::TextStyle::Monospace),
-    );
-    ui.add_space(2.0);
-}
-
-fn build_profile(
-    draft: &ManualDraft,
-    editing: Option<&str>,
-    created_at: u64,
-) -> Result<Profile, String> {
-    let port: u16 = draft
-        .port
-        .trim()
-        .parse()
-        .map_err(|_| "port must be a number".to_string())?;
-    let transport = match draft.transport_idx {
-        1 => Transport::Tls,
-        2 => Transport::Ws,
-        3 => Transport::Grpc,
-        4 => Transport::H2,
-        _ => Transport::Plain,
-    };
-    let protocol = Protocol::ALL[draft.protocol_idx];
-    let credential = match protocol {
-        Protocol::Shadowsocks => Credential::SsMethod {
-            method: if draft.ss_method.trim().is_empty() {
-                "aes-256-gcm".into()
-            } else {
-                draft.ss_method.trim().to_string()
-            },
-            password: draft.cred.trim().to_string(),
-        },
-        Protocol::Vless | Protocol::Vmess => Credential::Uuid(draft.cred.trim().to_string()),
-        Protocol::Socks | Protocol::Http => {
-            if draft.cred.trim().is_empty() {
-                Credential::None
-            } else {
-                Credential::Token(draft.cred.trim().to_string())
-            }
-        }
-        _ => {
-            if draft.cred.trim().is_empty() {
-                return Err("this protocol needs a password".into());
-            }
-            Credential::Password(draft.cred.trim().to_string())
-        }
-    };
-    let prof = Profile {
-        id: editing.map(String::from).unwrap_or_else(new_profile_id),
-        name: draft.name.trim().to_string(),
-        protocol,
-        server: draft.server.trim().to_string(),
-        port,
-        credential,
-        transport,
-        sni: if draft.sni.trim().is_empty() {
-            None
-        } else {
-            Some(draft.sni.trim().to_string())
-        },
-        path: if draft.path.trim().is_empty() {
-            None
-        } else {
-            Some(draft.path.trim().to_string())
-        },
-        allow_insecure: draft.insecure,
-        udp: draft.udp,
-        group: None,
-        created_at,
-    };
-    prof.validate().map_err(|e| e.to_string())?;
-    Ok(prof)
-}
-
-// ---- Group dialogs -------------------------------------------------------------
-
-fn new_group(app: &mut App, ctx: &egui::Context, p: &Palette, name: String, mode: usize) -> Dialog {
-    let mut name = name;
-    let mut mode = mode;
-    let mut closed = false;
-    modal(ctx, p, "newgroup", 380.0, |ui| {
-        if modal_header(ui, p, "New connection group", Some("Cancel")) {
-            closed = true;
-            return;
-        }
-        ui.add(
-            egui::TextEdit::singleline(&mut name)
-                .hint_text("Group name")
-                .desired_width(ui.available_width()),
+    fn manual_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Add config manually")
+                .font(theme::bold(19.0))
+                .color(p.text),
         );
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            for (i, label) in ["Fastest", "Round robin", "Manual"].iter().enumerate() {
-                if ui
-                    .selectable_label(
-                        mode == i,
-                        theme::sans_med(
-                            (*label).to_string(),
-                            12.5,
-                            if mode == i { p.green } else { p.text_dim },
-                        ),
-                    )
-                    .clicked()
-                {
-                    mode = i;
-                }
-            }
-        });
         ui.add_space(8.0);
-        if fill_button(ui, p, "Create group", !name.trim().is_empty()).clicked() {
-            let group_mode = match mode {
-                1 => GroupMode::RoundRobin,
-                2 => GroupMode::Manual,
-                _ => GroupMode::Fastest,
-            };
-            app.groups.groups.push(Group {
-                id: new_profile_id(),
-                name: name.trim().to_string(),
-                mode: group_mode,
-                members: Vec::new(),
-                pinned: false,
-            });
-            app.groups.active_group = None;
-            app.groups.ensure_defaults();
-            app.groups.save();
-            app.toasts.show("Group created");
-            closed = true;
-        }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::NewGroup { name, mode }
-    }
-}
-
-fn edit_group(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    group_id: &str,
-    name: String,
-    mode: usize,
-    members: Vec<String>,
-) -> Dialog {
-    let mut name = name;
-    let mut mode = mode;
-    let mut members = members;
-    let mut closed = false;
-    let profiles: Vec<Profile> = app.data.profiles.clone();
-    modal(ctx, p, "editgroup", 420.0, |ui| {
-        if modal_header(ui, p, "Edit group", Some("Cancel")) {
-            closed = true;
-            return;
-        }
-        ui.add(
-            egui::TextEdit::singleline(&mut name)
-                .hint_text("Group name")
-                .desired_width(ui.available_width()),
-        );
-        ui.horizontal(|ui| {
-            for (i, label) in ["Fastest", "Round robin", "Manual"].iter().enumerate() {
-                if ui
-                    .selectable_label(
-                        mode == i,
-                        theme::sans_med(
-                            (*label).to_string(),
-                            12.5,
-                            if mode == i { p.green } else { p.text_dim },
-                        ),
-                    )
-                    .clicked()
-                {
-                    mode = i;
-                }
-            }
-        });
-        ui.add_space(4.0);
-        tracked_label(ui, p, "MEMBERS");
-        egui::ScrollArea::vertical()
-            .max_height(240.0)
-            .show(ui, |ui| {
-                for prof in &profiles {
-                    let included = members.contains(&prof.id);
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::Vec2::new(ui.available_width(), 26.0),
-                        egui::Sense::click(),
-                    );
-                    let painter = ui.painter_at(rect);
-                    let check = if included { p.green } else { p.text_faint };
-                    painter.circle_stroke(
-                        egui::Pos2::new(rect.left() + 10.0, rect.center().y),
-                        7.0,
-                        egui::Stroke::new(1.4_f32, check),
-                    );
-                    if included {
-                        painter.circle_filled(
-                            egui::Pos2::new(rect.left() + 10.0, rect.center().y),
-                            3.6,
-                            p.green,
-                        );
-                    }
-                    painter.galley(
-                        egui::Pos2::new(rect.left() + 26.0, rect.center().y - 9.0),
-                        painter.layout_no_wrap(
-                            format!("{} ({})", prof.name, prof.protocol.as_str()),
-                            egui::FontId::new(12.5, egui::FontFamily::Proportional),
-                            p.text,
-                        ),
-                        p.text,
-                    );
-                    if resp.clicked() {
-                        if included {
-                            members.retain(|id| id != &prof.id);
-                        } else {
-                            members.push(prof.id.clone());
-                        }
-                    }
-                }
-            });
+        field_label(ui, p, "Name (optional)");
+        egui::TextEdit::singleline(&mut self.ms.manual_name)
+            .hint_text("My shop")
+            .desired_width(ui.available_width())
+            .ui(ui);
         ui.add_space(6.0);
-        if fill_button(ui, p, "Save group", !name.trim().is_empty()).clicked() {
-            if let Some(g) = app.groups.group_mut(group_id) {
-                g.name = name.trim().to_string();
-                g.mode = match mode {
-                    1 => GroupMode::RoundRobin,
-                    2 => GroupMode::Manual,
-                    _ => GroupMode::Fastest,
+        field_label(ui, p, "Share link");
+        egui::TextEdit::multiline(&mut self.ms.manual_link)
+            .hint_text("vless://... / vmess://... / trojan://... / ss://...")
+            .desired_width(ui.available_width())
+            .desired_rows(3)
+            .font(egui::TextStyle::Monospace)
+            .ui(ui);
+        ui.add_space(6.0);
+        field_label(ui, p, "Group (optional)");
+        egui::TextEdit::singleline(&mut self.ms.manual_group)
+            .hint_text("Saved")
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Add config") {
+            Action::Confirm => {
+                let link = self.ms.manual_link.trim().to_owned();
+                if link.is_empty() {
+                    self.toast_now("Paste a share link first");
+                    return;
+                }
+                let group = match self.ms.manual_group.trim() {
+                    "" => None,
+                    g => Some(g.to_owned()),
                 };
-                g.members = members.clone();
+                match vault_actions::import_one(&mut self.vault, &link, group.as_deref()) {
+                    Ok(name) => {
+                        self.persist_vault();
+                        self.push_log("INFO", &format!("imported '{name}' manually"));
+                        self.toast_now(format!("Imported {name}"));
+                        self.close_modal();
+                    }
+                    Err(e) => self.toast_now(format!("Import failed: {e}")),
+                }
             }
-            app.groups.save();
-            app.toasts.show("Group updated");
-            closed = true;
-        }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::EditGroup {
-            group_id: group_id.to_string(),
-            name,
-            mode,
-            members,
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
         }
     }
-}
 
-fn rename_dialog(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    group_id: &str,
-    name: String,
-) -> Dialog {
-    let mut name = name;
-    let mut closed = false;
-    modal(ctx, p, "rename", 360.0, |ui| {
-        if modal_header(ui, p, "Rename group", Some("Cancel")) {
-            closed = true;
-            return;
-        }
-        ui.add(
-            egui::TextEdit::singleline(&mut name)
-                .hint_text("New name")
-                .desired_width(ui.available_width()),
+    fn new_group_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("New connection group")
+                .font(theme::bold(19.0))
+                .color(p.text),
         );
-        ui.add_space(6.0);
-        if fill_button(ui, p, "Rename", !name.trim().is_empty()).clicked() {
-            if let Some(g) = app.groups.group_mut(group_id) {
-                g.name = name.trim().to_string();
-            }
-            app.groups.save();
-            closed = true;
-        }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::Rename {
-            group_id: group_id.to_string(),
-            name,
-        }
-    }
-}
-
-fn confirm_delete_group(app: &mut App, ctx: &egui::Context, p: &Palette, group_id: &str) -> Dialog {
-    let mut close = false;
-    modal(ctx, p, "delgroup", 380.0, |ui| {
-        ui.label(theme::sans_bold("Delete group?", 17.0, p.text));
-        ui.label(theme::sans(
-            "The group is removed. Profiles inside it are kept in Saved.",
-            12.0,
-            p.text_dim,
-        ));
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add(egui::Button::new(theme::sans_med("Delete", 13.0, p.red)).fill(p.green_deep))
-                .clicked()
-            {
-                app.groups.groups.retain(|g| g.id != group_id);
-                if app.groups.active_group.as_deref() == Some(group_id) {
-                    app.groups.active_group = None;
-                }
-                app.groups.ensure_defaults();
-                app.groups.save();
-                app.toasts.show("Group deleted");
-                close = true;
-            }
-            if ui.button("Keep").clicked() {
-                close = true;
-            }
-        });
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::ConfirmDeleteGroup {
-            group_id: group_id.to_string(),
-        }
-    }
-}
-
-fn confirm_delete_profile(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    profile_id: &str,
-) -> Dialog {
-    let mut close = false;
-    let name = app
-        .data
-        .profiles
-        .iter()
-        .find(|prof| prof.id == profile_id)
-        .map(|prof| prof.name.clone())
-        .unwrap_or_default();
-    modal(ctx, p, "delprofile", 380.0, |ui| {
-        ui.label(theme::sans_bold("Delete config?", 17.0, p.text));
-        ui.label(theme::sans(
-            format!("'{name}' will be removed from the vault and all groups."),
-            12.0,
-            p.text_dim,
-        ));
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add(egui::Button::new(theme::sans_med("Delete", 13.0, p.red)).fill(p.green_deep))
-                .clicked()
-            {
-                let _ = npvt_core::vault::remove_profile(&mut app.data, profile_id);
-                for g in &mut app.groups.groups {
-                    g.members.retain(|id| id != profile_id);
-                }
-                app.groups.usage.remove(profile_id);
-                app.save_all();
-                app.toasts.show("Config deleted");
-                close = true;
-            }
-            if ui.button("Keep").clicked() {
-                close = true;
-            }
-        });
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::ConfirmDeleteProfile {
-            profile_id: profile_id.to_string(),
-        }
-    }
-}
-
-// ---- Import file unlock ---------------------------------------------------------
-
-fn import_file(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    path: &str,
-    lock_kind: &str,
-    passphrase: String,
-    _error: Option<String>,
-) -> Dialog {
-    let mut passphrase = passphrase;
-    let mut closed = false;
-    modal(ctx, p, "unlock", 380.0, |ui| {
-        ui.label(theme::sans_bold("Unlock config", 17.0, p.text));
-        ui.label(theme::sans(
-            format!("{path}\nThis container is {lock_kind}-locked."),
-            11.5,
-            p.text_dim,
-        ));
-        ui.add_space(6.0);
-        if lock_kind == "keys" {
-            ui.label(theme::sans(
-                "It will be unlocked with your own key (MORE > My public key).",
-                11.5,
-                p.text_dim,
-            ));
-        } else {
-            ui.add(
-                egui::TextEdit::singleline(&mut passphrase)
-                    .password(true)
-                    .hint_text("Passphrase")
-                    .desired_width(ui.available_width()),
-            );
-        }
-        ui.add_space(6.0);
-        if fill_button(ui, p, "Unlock and import", true).clicked() {
-            match std::fs::read(path) {
-                Ok(bytes) => {
-                    if lock_kind == "keys" {
-                        let Some(secret) = app
-                            .data
-                            .identity
-                            .as_ref()
-                            .map(|identity| identity.x25519_seed)
-                        else {
-                            app.toasts
-                                .error("No identity yet: open MORE > My public key first");
-                            return;
-                        };
-                        match npvt_core::npvt::v2::decode(
-                            &bytes,
-                            npvt_core::npvt::v2::Unlock::Keys(&[secret]),
-                        ) {
-                            Ok(decoded) => {
-                                let report = import_profiles(&mut app.data, vec![decoded.profile]);
-                                app.save_all();
-                                app.toasts.show(report.summary());
-                                closed = true;
-                            }
-                            Err(npvt_core::Error::CryptoAuth) => {
-                                app.toasts
-                                    .error("This container was not locked for your key");
-                            }
-                            Err(e) => app.toasts.error(format!("Import failed: {e}")),
+        field_label(ui, p, "Group name");
+        egui::TextEdit::singleline(&mut self.ms.group_name)
+            .hint_text("Smart Route")
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Create group") {
+            Action::Confirm => {
+                let name = self.ms.group_name.trim().to_owned();
+                match npvt_core::vault::clean_name_input(&name) {
+                    Ok(name) => {
+                        if !self.settings.extra_groups.contains(&name) {
+                            self.settings.extra_groups.push(name.clone());
+                            self.settings.save();
                         }
-                    } else if decode_container(app, &bytes, Some(passphrase.trim())) {
-                        closed = true;
+                        self.expanded.insert(name);
+                        self.toast_now("Group created");
+                        self.close_modal();
                     }
+                    Err(e) => self.toast_now(format!("Invalid name: {e}")),
                 }
-                Err(e) => app.toasts.error(format!("Cannot read file: {e}")),
             }
-        }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::ImportFile {
-            path: path.to_string(),
-            lock_kind: lock_kind.to_string(),
-            passphrase,
-            error: None,
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
         }
     }
-}
 
-// ---- MORE dialogs -----------------------------------------------------------------
-
-fn premium(app: &mut App, ctx: &egui::Context, p: &Palette) -> Dialog {
-    let mut close = false;
-    modal(ctx, p, "premium", 380.0, |ui| {
-        ui.label(theme::sans_bold("NPV Tunnel Premium", 18.0, p.text));
-        ui.add_space(4.0);
-        ui.label(theme::sans(
-            "Premium hides the sponsor panel from the Points screen and keeps every tunnel feature free forever.",
-            12.5,
-            p.text_dim,
-        ));
+    fn rename_group_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Rename group")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
         ui.add_space(8.0);
-        if app.settings.premium {
-            ui.label(theme::mono_med("PREMIUM ACTIVE", 12.0, p.green));
-            if fill_button(ui, p, "Close", true).clicked() {
-                close = true;
+        egui::TextEdit::singleline(&mut self.ms.group_name)
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Rename") {
+            Action::Confirm => {
+                if let Some(Modal::RenameGroup { label }) = self.modal.clone() {
+                    let new_name = self.ms.group_name.trim().to_owned();
+                    if npvt_core::vault::clean_name_input(&new_name).is_ok() && new_name != label {
+                        self.rename_group(&label, &new_name);
+                    }
+                    self.close_modal();
+                }
             }
-        } else {
-            ui.label(theme::mono(
-                format!("Your points: {}", app.settings.points),
-                11.5,
-                p.text_dim,
-            ));
-            ui.add_space(4.0);
-            let affordable = app.settings.points >= 5000;
-            if fill_button(ui, p, "Activate with 5000 points", affordable).clicked() {
-                app.settings.points -= 5000;
-                app.settings.premium = true;
-                app.settings.save();
-                app.toasts.show("Premium activated. Enjoy!");
-                close = true;
-            }
-            if !affordable {
-                ui.label(theme::sans(
-                    "Earn points on the Points screen (MORE > Points).",
-                    11.5,
-                    p.text_faint,
-                ));
-            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
         }
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::Premium
     }
-}
 
-fn points(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    watching: Option<std::time::Instant>,
-) -> Dialog {
-    let mut watching = watching;
-    let mut closed = false;
-    // Advance the sponsor countdown.
-    if let Some(started) = watching {
-        if started.elapsed() >= std::time::Duration::from_secs(8) {
-            app.settings.points += 25;
-            app.settings.last_sponsor = unix_now();
-            app.settings.save();
-            app.toasts.show("+25 points");
-            watching = None;
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_millis(300));
-        }
-    }
-    modal(ctx, p, "points", 380.0, |ui| {
-        if modal_header(ui, p, "Points", Some("Close")) {
-            closed = true;
-            return;
-        }
-        ui.label(theme::mono_bold(
-            format!("{}", app.settings.points),
-            30.0,
-            p.green,
-        ));
-        ui.label(theme::sans("points", 11.5, p.text_faint));
+    fn sort_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Sort configs")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
         ui.add_space(8.0);
-        let premium_note = if app.settings.premium {
-            "Premium is active: no sponsor panels."
-        } else {
-            "Watch a short sponsor clip to earn 25 points."
-        };
-        ui.label(theme::sans(premium_note, 12.0, p.text_dim));
-        ui.add_space(6.0);
-        if !app.settings.premium {
-            let cooldown_over = unix_now().saturating_sub(app.settings.last_sponsor) > 60;
-            match watching {
-                Some(started) => {
-                    let left = 8 - started.elapsed().as_secs().min(8);
-                    ui.label(theme::mono(
-                        format!("Sponsor playing… {left}s"),
-                        12.5,
-                        p.cyan,
-                    ));
-                }
-                None => {
-                    if fill_button(ui, p, "Watch sponsor clip", cooldown_over).clicked() {
-                        watching = Some(std::time::Instant::now());
-                    }
-                    if !cooldown_over {
-                        ui.label(theme::sans(
-                            "Available again in a minute.",
-                            11.0,
-                            p.text_faint,
-                        ));
-                    }
-                }
-            }
-        }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::Points { watching }
-    }
-}
-
-fn settings_dialog(app: &mut App, ctx: &egui::Context, p: &Palette) -> Dialog {
-    let mut close = false;
-    let mut socks = app.settings.socks_port.to_string();
-    let mut api = app.settings.api_port.to_string();
-    let mut dns = app.settings.dns.clone();
-    let mut autoconnect = app.settings.autoconnect;
-    let mut autostart = if cfg!(windows) {
-        data::autostart_enabled()
-    } else {
-        app.settings.autostart
-    };
-    modal(ctx, p, "settings", 400.0, |ui| {
-        if modal_header(ui, p, "Settings", Some("Cancel")) {
-            close = true;
-            return;
-        }
-        ui.horizontal(|ui| {
-            ui.label(theme::sans_med("SOCKS port", 12.0, p.text_dim));
-            ui.add(egui::TextEdit::singleline(&mut socks).desired_width(70.0));
-            ui.label(theme::sans_med("Clash API port", 12.0, p.text_dim));
-            ui.add(egui::TextEdit::singleline(&mut api).desired_width(70.0));
-        });
-        ui.horizontal(|ui| {
-            ui.label(theme::sans_med("DNS", 12.0, p.text_dim));
-            ui.add(
-                egui::TextEdit::singleline(&mut dns)
-                    .desired_width(140.0)
-                    .font(egui::TextStyle::Monospace),
+        let options = ["Name", "Ping", "Recently added"];
+        for (i, label) in options.iter().enumerate() {
+            let selected = self.settings.sort as usize == i;
+            let (rect, resp) = widgets::card(
+                ui,
+                p,
+                42.0,
+                Some(if selected { p.surface_hi } else { p.surface }),
+                None,
             );
-        });
-        ui.checkbox(&mut autoconnect, "Connect automatically at launch");
-        ui.checkbox(&mut autostart, "Start NPVTunnel with Windows");
-        ui.add_space(6.0);
-        if fill_button(ui, p, "Save settings", true).clicked() {
-            if let Ok(v) = socks.trim().parse() {
-                app.settings.socks_port = v;
+            widgets::label_at(
+                ui.painter(),
+                egui::Align2::LEFT_CENTER,
+                egui::Pos2::new(rect.left() + 16.0, rect.center().y),
+                label,
+                FontId::new(13.5, egui::FontFamily::Proportional),
+                if selected { p.accent } else { p.text },
+            );
+            if resp.clicked() {
+                self.settings.sort = match i {
+                    1 => crate::settings::SortMode::Ping,
+                    2 => crate::settings::SortMode::Added,
+                    _ => crate::settings::SortMode::Name,
+                };
+                self.settings.save();
+                self.close_modal();
             }
-            if let Ok(v) = api.trim().parse() {
-                app.settings.api_port = v;
-            }
-            if !dns.trim().is_empty() {
-                app.settings.dns = dns.trim().to_string();
-            }
-            app.settings.autoconnect = autoconnect;
-            app.settings.autostart = autostart;
-            let _ = data::set_autostart(autostart);
-            app.settings.save();
-            app.toasts.show("Settings saved");
-            close = true;
+            ui.add_space(4.0);
         }
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::SettingsDlg
     }
-}
 
-fn per_app(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    mode: usize,
-    processes: String,
-) -> Dialog {
-    let mut mode = mode;
-    let mut processes = processes;
-    let mut closed = false;
-    modal(ctx, p, "perapp", 400.0, |ui| {
-        if modal_header(ui, p, "Per-app Proxy", Some("Cancel")) {
-            closed = true;
-            return;
-        }
-        ui.label(theme::sans(
-            "Choose to allow/disallow certain apps from being tunneled through the VPN.",
-            12.0,
-            p.text_dim,
-        ));
-        ui.add_space(4.0);
-        for (i, (label, desc)) in [
-            ("Off", "Every app uses the tunnel."),
-            ("Allow-list", "Only the apps below are tunneled."),
-            ("Deny-list", "The apps below bypass the tunnel."),
-        ]
-        .iter()
-        .enumerate()
-        {
-            if radio_row(ui, p, mode == i, label, desc).clicked() {
-                mode = i;
-            }
-        }
-        ui.add_space(4.0);
-        ui.label(theme::sans_med(
-            "Process names (one per line)",
-            12.0,
-            p.text_dim,
-        ));
-        ui.add(
-            egui::TextEdit::multiline(&mut processes)
-                .desired_rows(4)
-                .desired_width(ui.available_width())
-                .font(egui::TextStyle::Monospace),
+    fn passphrase_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Locked config")
+                .font(theme::bold(19.0))
+                .color(p.text),
         );
         ui.add_space(6.0);
-        if fill_button(ui, p, "Save", true).clicked() {
-            app.settings.per_app.mode = match mode {
-                1 => "allow".into(),
-                2 => "deny".into(),
-                _ => "off".into(),
-            };
-            app.settings.per_app.processes = processes
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .map(ToOwned::to_owned)
-                .collect();
-            app.settings.save();
-            app.toasts.show("Per-app rules saved");
-            closed = true;
+        ui.label(
+            egui::RichText::new(
+                "This .npvt container is protected with a passphrase. Enter it to import.",
+            )
+            .font(FontId::new(12.5, egui::FontFamily::Proportional))
+            .color(p.text_secondary),
+        );
+        ui.add_space(10.0);
+        egui::TextEdit::singleline(&mut self.ms.pass_entry)
+            .hint_text("Passphrase")
+            .password(true)
+            .desired_width(ui.available_width())
+            .ui(ui);
+        if let Some(err) = &self.ms.pass_err {
+            ui.label(
+                egui::RichText::new(err)
+                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                    .color(p.red),
+            );
         }
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::PerApp { mode, processes }
+        ui.add_space(12.0);
+        match footer_custom(ui, p, "Unlock", p.accent) {
+            Action::Confirm => {
+                let Some(bytes) = self.ms.pending_locked.clone() else {
+                    self.close_modal();
+                    return;
+                };
+                let pass = self.ms.pass_entry.clone();
+                match vault_actions::decode_container_passphrase(&bytes, &pass) {
+                    Ok(decoded) => {
+                        let mut profile = decoded.profile;
+                        profile.id = npvt_core::profile::new_profile_id();
+                        if profile.group.is_none() {
+                            if let Some(hint) = decoded.policy.group_hint.clone() {
+                                profile.group = Some(hint);
+                            }
+                        }
+                        let name = profile.name.clone();
+                        let _ = npvt_core::vault::upsert_profile(&mut self.vault, profile);
+                        self.persist_vault();
+                        self.push_log("INFO", &format!("imported locked container '{name}'"));
+                        self.toast_now(format!("Imported {name}"));
+                        self.ms.pending_locked = None;
+                        self.ms.pass_entry.clear();
+                        self.ms.pass_err = None;
+                        self.close_modal();
+                    }
+                    Err(e) => self.ms.pass_err = Some(format!("Wrong passphrase: {e}")),
+                }
+            }
+            Action::Cancel => {
+                self.ms.pending_locked = None;
+                self.close_modal();
+            }
+            Action::None => {}
+        }
     }
-}
 
-fn public_key(app: &mut App, ctx: &egui::Context, p: &Palette) -> Dialog {
-    use npvt_core::npvt::v2;
-    let mut close = false;
-    // Generate an identity on first use.
-    if app.data.identity.is_none() {
-        app.data.identity = Some(npvt_core::vault::generate_identity());
-        app.save_all();
-    }
-    let (x_pub, e_pub) = {
-        let identity = app.data.identity.as_ref().expect("just generated");
-        let x = v2::x25519_public_from_secret(&identity.x25519_seed);
-        let signing = v2::signing_key_from_seed(&identity.ed25519_seed);
-        (
-            v2::key_to_b64(&x),
-            v2::key_to_b64(signing.verifying_key().as_bytes()),
+    fn export_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        // Title row with back chevron.
+        let (back_rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::hover());
+        let painter = ui.painter();
+        let chev = egui::Rect::from_center_size(
+            egui::Pos2::new(back_rect.left() + 10.0, back_rect.center().y),
+            Vec2::splat(20.0),
+        );
+        let title_galley = ui
+            .ctx()
+            .fonts(|f| f.layout_no_wrap("Share config".to_owned(), theme::bold(18.0), p.text));
+        painter.galley(
+            egui::Pos2::new(
+                back_rect.left() + 30.0,
+                back_rect.center().y - title_galley.size().y / 2.0,
+            ),
+            title_galley,
+            p.text,
+        );
+        if widgets::icon_button(
+            ui,
+            chev,
+            p.text_secondary,
+            icons::chevron_left,
+            "export-back",
+            "Back",
+        ) {
+            self.close_modal();
+        }
+        ui.add_space(8.0);
+
+        // Export button.
+        let enabled = !self.ms.export.filename.trim().is_empty();
+        let export_btn = egui::Button::new(
+            egui::RichText::new("Export Configuration")
+                .font(theme::semibold(13.5))
+                .color(if enabled { p.accent } else { p.text_faint }),
         )
-    };
-    modal(ctx, p, "pubkey", 430.0, |ui| {
-        if modal_header(ui, p, "My public key", Some("Close")) {
-            close = true;
-            return;
+        .fill(p.surface)
+        .stroke(egui::Stroke::new(
+            1.0,
+            if enabled { p.border_sel } else { p.border },
+        ))
+        .rounding(egui::Rounding::same(10.0))
+        .min_size(Vec2::new(ui.available_width(), 42.0));
+        if ui.add_enabled(enabled, export_btn).clicked() {
+            self.export_profile();
         }
-        ui.label(theme::sans(
-            "Share these keys so other people can send you key-locked configs.",
+        ui.add_space(6.0);
+        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Copy as npvt:// link")
+                        .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                        .color(p.cyan),
+                ))
+                .clicked()
+            {
+                self.export_link_to_clipboard();
+            }
+        });
+        ui.add_space(10.0);
+
+        field_label(ui, p, "Config Filename");
+        egui::TextEdit::singleline(&mut self.ms.export.filename)
+            .hint_text("my-shop.npvt")
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(12.0);
+
+        // Lock radio group.
+        ui.label(
+            egui::RichText::new("Lock this config?")
+                .font(theme::semibold(14.5))
+                .color(p.text),
+        );
+        ui.add_space(4.0);
+        if widgets::radio_row(
+            ui,
+            p,
+            "Lock it",
+            "Recipients can connect, but cannot view or edit the config.",
+            self.ms.export.lock == 0,
+        ) {
+            self.ms.export.lock = 0;
+        }
+        ui.add_space(2.0);
+        if widgets::radio_row(
+            ui,
+            p,
+            "Keep it open",
+            "Recipients can view, edit and share the config.",
+            self.ms.export.lock == 1,
+        ) {
+            self.ms.export.lock = 1;
+        }
+        ui.add_space(10.0);
+
+        // Deliver it with (only when locked).
+        ui.label(
+            egui::RichText::new("Deliver it with")
+                .font(theme::semibold(14.5))
+                .color(p.text),
+        );
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("Serverless: saves a file")
+                .font(theme::mono(10.5))
+                .color(p.text_faint),
+        );
+        ui.add_space(2.0);
+        if widgets::radio_row(
+            ui,
+            p,
+            "Specific people",
+            "Enter one or more recipient public keys.",
+            self.ms.export.deliver == 0,
+        ) {
+            self.ms.export.deliver = 0;
+        }
+        ui.add_space(2.0);
+        if widgets::radio_row(
+            ui,
+            p,
+            "Passphrase",
+            "Post the file anywhere; share the passphrase to open it.",
+            self.ms.export.deliver == 1,
+        ) {
+            self.ms.export.deliver = 1;
+        }
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("Your server: gives a link")
+                .font(theme::mono(10.5))
+                .color(p.text_faint),
+        );
+        widgets::radio_row_disabled(
+            ui,
+            p,
+            "Share link",
+            "Share link handles one config at a time.",
+        );
+        ui.add_space(6.0);
+        if self.ms.export.lock == 0 && self.ms.export.deliver == 0 {
+            field_label(ui, p, "Recipient public keys");
+            egui::TextEdit::multiline(&mut self.ms.export.keys)
+                .hint_text("one base64url X25519 key per line")
+                .desired_width(ui.available_width())
+                .desired_rows(3)
+                .font(egui::TextStyle::Monospace)
+                .ui(ui);
+        } else if self.ms.export.lock == 0 && self.ms.export.deliver == 1 {
+            field_label(ui, p, "Passphrase");
+            egui::TextEdit::singleline(&mut self.ms.export.pass)
+                .hint_text("at least 8 characters")
+                .password(true)
+                .desired_width(ui.available_width())
+                .ui(ui);
+            egui::TextEdit::singleline(&mut self.ms.export.pass2)
+                .hint_text("repeat passphrase")
+                .password(true)
+                .desired_width(ui.available_width())
+                .ui(ui);
+        }
+        ui.add_space(12.0);
+
+        // Secrecy slider.
+        let secrecy_label = secrecy_word(self.ms.export.secrecy);
+        let (row_rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.0), Sense::hover());
+        let painter = ui.painter();
+        widgets::label_at(
+            painter,
+            egui::Align2::LEFT_CENTER,
+            egui::Pos2::new(row_rect.left(), row_rect.center().y),
+            "Secrecy",
+            theme::semibold(14.5),
+            p.text,
+        );
+        widgets::label_at(
+            painter,
+            egui::Align2::RIGHT_CENTER,
+            egui::Pos2::new(row_rect.right(), row_rect.center().y),
+            secrecy_label,
+            theme::mono_bold(12.0),
+            p.amber,
+        );
+        ui.add_space(6.0);
+        let (value, changed) = widgets::gradient_slider(
+            ui,
+            p,
             12.0,
-            p.text_dim,
-        ));
+            &[p.red, p.amber, p.accent],
+            self.ms.export.secrecy,
+        );
+        if changed {
+            self.ms.export.secrecy = (value * 3.0).round() / 3.0;
+        }
+        ui.label(
+            egui::RichText::new("Available to the recipients you select.")
+                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .color(p.text_faint),
+        );
+        ui.add_space(10.0);
+        if let Some(err) = &self.ms.export.err {
+            ui.label(
+                egui::RichText::new(err)
+                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                    .color(p.red),
+            );
+        }
+        ui.add_space(4.0);
+    }
+
+    fn delete_profile_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Remove config")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
         ui.add_space(6.0);
-        tracked_label(ui, p, "X25519 (FOR LOCKED SHARES)");
-        key_row(ui, p, &x_pub);
+        ui.label(
+            egui::RichText::new(
+                "This removes the config from your vault. Anyone you shared it with is unaffected.",
+            )
+            .font(FontId::new(12.5, egui::FontFamily::Proportional))
+            .color(p.text_secondary),
+        );
+        ui.add_space(14.0);
+        match footer_custom(ui, p, "Remove", p.red) {
+            Action::Confirm => {
+                if let Some(Modal::ConfirmDeleteProfile { id }) = self.modal.clone() {
+                    self.delete_profile(&id);
+                    self.close_modal();
+                }
+            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
+        }
+    }
+
+    fn delete_group_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Delete group")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
         ui.add_space(6.0);
-        tracked_label(ui, p, "ED25519 (CREATOR SIGNATURE)");
-        key_row(ui, p, &e_pub);
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::PublicKey
+        ui.label(
+            egui::RichText::new("This removes the group and every config inside it.")
+                .font(FontId::new(12.5, egui::FontFamily::Proportional))
+                .color(p.text_secondary),
+        );
+        ui.add_space(14.0);
+        match footer_custom(ui, p, "Delete", p.red) {
+            Action::Confirm => {
+                if let Some(Modal::ConfirmDeleteGroup { label }) = self.modal.clone() {
+                    self.delete_group(&label);
+                    self.close_modal();
+                }
+            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
+        }
+    }
+
+    fn edit_profile_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Edit config")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(8.0);
+        field_label(ui, p, "Name");
+        egui::TextEdit::singleline(&mut self.ms.edit_name)
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(6.0);
+        field_label(ui, p, "Group");
+        egui::TextEdit::singleline(&mut self.ms.edit_group)
+            .desired_width(ui.available_width())
+            .ui(ui);
+        ui.add_space(8.0);
+        ui.checkbox(&mut self.ms.edit_udp, "UDP relay");
+        ui.checkbox(
+            &mut self.ms.edit_insecure,
+            "Allow insecure TLS (not recommended)",
+        );
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Save") {
+            Action::Confirm => {
+                if let Some(Modal::EditProfile { id }) = self.modal.clone() {
+                    self.apply_profile_edit(&id);
+                    self.close_modal();
+                }
+            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
+        }
+    }
+
+    fn settings_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Settings")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(10.0);
+        let ms = &mut self.ms;
+        field_label(ui, p, "SOCKS listen port");
+        ui.add(egui::TextEdit::singleline(&mut ms.set_socks).desired_width(140.0));
+        field_label(ui, p, "Traffic API port");
+        ui.add(egui::TextEdit::singleline(&mut ms.set_clash).desired_width(140.0));
+        field_label(ui, p, "DNS server");
+        ui.add(egui::TextEdit::singleline(&mut ms.set_dns).desired_width(ui.available_width()));
+        field_label(ui, p, "Monthly quota (GB, 0 = unlimited)");
+        ui.add(egui::TextEdit::singleline(&mut ms.set_quota).desired_width(140.0));
+        field_label(ui, p, "Engine path (optional)");
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut ms.set_engine)
+                    .desired_width(ui.available_width() - 90.0),
+            );
+            if ui.button("Browse").clicked() {
+                if let Some(path) = pick_engine_binary() {
+                    ms.set_engine = path.to_string_lossy().to_string();
+                }
+            }
+        });
+        ui.add_space(6.0);
+        field_label(ui, p, "Engine log level");
+        egui::ComboBox::from_id_salt("loglevel")
+            .selected_text(["warn", "info", "error", "debug"][ms.set_loglevel])
+            .show_ui(ui, |ui| {
+                for (i, level) in ["warn", "info", "error", "debug"].iter().enumerate() {
+                    ui.selectable_value(&mut ms.set_loglevel, i, *level);
+                }
+            });
+        ui.add_space(6.0);
+        ui.checkbox(&mut ms.set_autostart, "Start with Windows");
+        ui.checkbox(&mut ms.set_launch, "Connect on launch");
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Save settings") {
+            Action::Confirm => {
+                self.apply_settings_dialog();
+            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
+        }
+    }
+
+    fn per_app_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Per-app Proxy")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(8.0);
+        let modes = ["Off", "Block apps", "Allow only"];
+        if let Some(i) = widgets::segmented(ui, p, &modes, self.ms.per_app_mode as usize, &[]) {
+            self.ms.per_app_mode = match i {
+                1 => crate::settings::PerAppMode::Block,
+                2 => crate::settings::PerAppMode::Allow,
+                _ => crate::settings::PerAppMode::Off,
+            };
+        }
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new("Process names, one per line (e.g. steam.exe). Block routes those apps outside the tunnel; Allow only tunnels those apps.")
+                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .color(p.text_faint),
+        );
+        egui::TextEdit::multiline(&mut self.ms.per_app_text)
+            .desired_width(ui.available_width())
+            .desired_rows(5)
+            .font(egui::TextStyle::Monospace)
+            .ui(ui);
+        ui.add_space(12.0);
+        match footer(ui, p, false, "Apply") {
+            Action::Confirm => {
+                self.settings.per_app_mode = self.ms.per_app_mode;
+                self.settings.per_app = self
+                    .ms
+                    .per_app_text
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                self.settings.save();
+                self.push_log(
+                    "INFO",
+                    "per-app proxy rules updated (applies on next connect)",
+                );
+                self.toast_now("Saved - reconnect to apply");
+                self.close_modal();
+            }
+            Action::Cancel => self.close_modal(),
+            Action::None => {}
+        }
+    }
+
+    fn public_key_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("My public key")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "Give this key to a creator so they can send you key-locked configs.",
+            )
+            .font(FontId::new(12.0, egui::FontFamily::Proportional))
+            .color(p.text_faint),
+        );
+        ui.add_space(10.0);
+        if let Some(pk) = vault_actions::my_public_key(&self.vault) {
+            let clicked = key_row(ui, p, "X25519 (config sharing)", &pk, "copy-x25519");
+            if clicked {
+                self.copy_to_clipboard(pk);
+            }
+        }
+        if let Some(ck) = vault_actions::my_creator_key(&self.vault) {
+            let clicked = key_row(ui, p, "Ed25519 (creator key)", &ck, "copy-ed25519");
+            if clicked {
+                self.copy_to_clipboard(ck);
+            }
+        }
+        ui.add_space(10.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Close").color(p.accent),
+                ))
+                .clicked()
+            {
+                self.close_modal();
+            }
+        });
+    }
+
+    fn premium_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+            ui.add_space(6.0);
+            let rect = egui::Rect::from_center_size(ui.cursor().center(), Vec2::splat(56.0));
+            icons::paint_with(
+                ui.painter(),
+                rect,
+                Color32::from_rgb(0xFB, 0xBF, 0x24),
+                |c| icons::medal(c, c.color()),
+                2.6,
+            );
+            ui.add_space(12.0);
+            ui.label(egui::RichText::new("NPVTunnel Premium").font(theme::bold(19.0)).color(p.text));
+            ui.label(
+                egui::RichText::new("This build is free and fully unlocked. There are no ads to remove - everything you see is included.")
+                    .font(FontId::new(12.5, egui::FontFamily::Proportional))
+                    .color(p.text_secondary),
+            );
+        });
+        ui.add_space(14.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Nice").color(p.accent),
+                ))
+                .clicked()
+            {
+                self.close_modal();
+            }
+        });
+    }
+
+    fn points_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("Points")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new("Points are not needed here: NPVTunnel shows no ads and pays no rewards. Your configs are your points.")
+                .font(FontId::new(12.5, egui::FontFamily::Proportional))
+                .color(p.text_secondary),
+        );
+        ui.add_space(14.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Got it").color(p.accent),
+                ))
+                .clicked()
+            {
+                self.close_modal();
+            }
+        });
+    }
+
+    fn assets_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.label(
+            egui::RichText::new("User assets")
+                .font(theme::bold(19.0))
+                .color(p.text),
+        );
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new("Geo data files used by custom config routing.")
+                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .color(p.text_faint),
+        );
+        ui.add_space(10.0);
+        let names = ["geoip.db", "geosite.db"];
+        for (i, name) in names.iter().enumerate() {
+            let (rect, resp) = widgets::card(ui, p, 46.0, Some(p.surface), None);
+            let painter = ui.painter();
+            widgets::label_at(
+                painter,
+                egui::Align2::LEFT_CENTER,
+                egui::Pos2::new(rect.left() + 14.0, rect.center().y),
+                name,
+                FontId::new(13.0, egui::FontFamily::Proportional),
+                p.text,
+            );
+            widgets::label_at(
+                painter,
+                egui::Align2::RIGHT_CENTER,
+                egui::Pos2::new(rect.right() - 14.0, rect.center().y),
+                if self.asset_busy && self.asset_which == i {
+                    "downloading..."
+                } else {
+                    "download"
+                },
+                FontId::new(12.5, egui::FontFamily::Proportional),
+                if self.asset_busy && self.asset_which == i {
+                    p.amber
+                } else {
+                    p.cyan
+                },
+            );
+            if resp.clicked() && !self.asset_busy {
+                self.start_asset_download(i, name);
+            }
+            ui.add_space(4.0);
+        }
+        ui.add_space(6.0);
+        let (received, total) = self.asset_progress.snapshot();
+        if total > 0 {
+            let bar =
+                egui::Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 6.0));
+            widgets::progress_bar(
+                ui.painter(),
+                bar,
+                received as f32 / total as f32,
+                p.accent,
+                p.cyan,
+                p.border,
+            );
+            ui.add_space(6.0);
+        }
+        if !self.asset_status.is_empty() {
+            ui.label(
+                egui::RichText::new(self.asset_status.as_str())
+                    .font(FontId::new(11.5, egui::FontFamily::Proportional))
+                    .color(p.text_secondary),
+            );
+        }
+        ui.add_space(10.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Close").color(p.accent),
+                ))
+                .clicked()
+            {
+                self.close_modal();
+            }
+        });
+    }
+
+    fn about_dialog(&mut self, ui: &mut egui::Ui) {
+        let p = self.palette;
+        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+            ui.label(egui::RichText::new(theme::spaced("NPV TUNNEL")).font(theme::mono(14.0)).color(p.accent));
+            ui.label(egui::RichText::new(format!("v{} for Windows", env!("CARGO_PKG_VERSION"))).font(theme::mono(11.0)).color(p.text_faint));
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Security-hardened .npvt tunnel client.\nMIT licensed, source at github.com/librewolfsigma/npvtunnel")
+                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                    .color(p.text_secondary),
+            );
+        });
+        ui.add_space(10.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Copy repo link").color(p.cyan),
+                ))
+                .clicked()
+            {
+                self.copy_to_clipboard("https://github.com/librewolfsigma/npvtunnel".to_owned());
+            }
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new("Close").color(p.accent),
+                ))
+                .clicked()
+            {
+                self.close_modal();
+            }
+        });
     }
 }
 
-fn key_row(ui: &mut egui::Ui, p: &Palette, key: &str) {
-    let mut display = key.to_string();
+impl ModalState {
+    pub fn new() -> Self {
+        ModalState {
+            sub_url: String::new(),
+            sub_group: String::new(),
+            sub_busy: false,
+            manual_link: String::new(),
+            manual_name: String::new(),
+            manual_group: String::new(),
+            group_name: String::new(),
+            pass_entry: String::new(),
+            pass_err: None,
+            pending_locked: None,
+            export: Default::default(),
+            edit_id: String::new(),
+            edit_name: String::new(),
+            edit_group: String::new(),
+            edit_udp: true,
+            edit_insecure: false,
+            set_socks: "2080".to_owned(),
+            set_clash: "19090".to_owned(),
+            set_dns: "8.8.8.8".to_owned(),
+            set_engine: String::new(),
+            set_quota: "100".to_owned(),
+            set_autostart: false,
+            set_launch: false,
+            set_loglevel: 0,
+            per_app_text: String::new(),
+            per_app_mode: crate::settings::PerAppMode::Off,
+        }
+    }
+}
+
+fn secrecy_word(t: f32) -> &'static str {
+    if t < 0.34 {
+        "MINIMAL"
+    } else if t < 0.67 {
+        "MODERATE"
+    } else {
+        "MAXIMUM"
+    }
+}
+
+fn field_label(ui: &mut egui::Ui, p: Palette, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .font(FontId::new(12.0, egui::FontFamily::Proportional))
+            .color(p.text_secondary),
+    );
+}
+
+fn key_row(ui: &mut egui::Ui, p: Palette, title: &str, key: &str, id: &str) -> bool {
+    field_label(ui, p, title);
+    let mut clicked = false;
     ui.horizontal(|ui| {
+        let mut display = key.to_owned();
         ui.add(
             egui::TextEdit::singleline(&mut display)
                 .font(egui::TextStyle::Monospace)
-                .desired_width(ui.available_width() - 40.0),
+                .desired_width(ui.available_width() - 60.0),
         );
-        if icons::icon_button(ui, Icon::Copy, 26.0, p.cyan, None)
-            .on_hover_text("Copy key")
-            .clicked()
-        {
-            if let Ok(mut clip) = arboard::Clipboard::new() {
-                let _ = clip.set_text(key.to_string());
-            }
-        }
-    });
-}
-
-fn user_assets(
-    _app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    geoip: Option<Arc<Mutex<DownloadState>>>,
-    geosite: Option<Arc<Mutex<DownloadState>>>,
-    geoip_cancel: Arc<std::sync::atomic::AtomicBool>,
-    geosite_cancel: Arc<std::sync::atomic::AtomicBool>,
-) -> Dialog {
-    let mut geoip = geoip;
-    let mut geosite = geosite;
-    let mut geoip_cancel = geoip_cancel;
-    let mut geosite_cancel = geosite_cancel;
-    let mut closed = false;
-    modal(ctx, p, "assets", 420.0, |ui| {
-        if modal_header(ui, p, "User assets", Some("Close")) {
-            closed = true;
-            return;
-        }
-        ui.label(theme::sans(
-            "Download geo data files (geoip, geosite) used by custom config routing.",
-            12.0,
-            p.text_dim,
-        ));
-        ui.add_space(6.0);
-        let Ok(assets_dir) = npvt_core::engine::work_dir().map(|d| d.join("assets")) else {
-            return;
-        };
-        let _ = std::fs::create_dir_all(&assets_dir);
-        asset_row(
+        if widgets::icon_button(
             ui,
-            p,
-            "geoip.db",
-            GEOIP_URL,
-            &assets_dir,
-            &mut geoip,
-            &mut geoip_cancel,
-        );
-        ui.add_space(8.0);
-        asset_row(
-            ui,
-            p,
-            "geosite.db",
-            GEOSITE_URL,
-            &assets_dir,
-            &mut geosite,
-            &mut geosite_cancel,
-        );
-    });
-    if closed {
-        Dialog::Closed
-    } else {
-        Dialog::UserAssets {
-            geoip,
-            geosite,
-            geoip_cancel,
-            geosite_cancel,
-        }
-    }
-}
-
-fn asset_row(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    filename: &str,
-    url: &str,
-    dir: &std::path::Path,
-    state: &mut Option<Arc<Mutex<DownloadState>>>,
-    cancel: &mut Arc<std::sync::atomic::AtomicBool>,
-) {
-    let dest = dir.join(filename);
-    let existing = std::fs::metadata(&dest).ok();
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label(theme::sans_med(filename, 13.0, p.text));
-            match &existing {
-                Some(meta) => {
-                    ui.label(theme::mono(
-                        format!("{} · downloaded", data::format_bytes(meta.len())),
-                        10.5,
-                        p.text_dim,
-                    ));
-                }
-                None => {
-                    ui.label(theme::mono("not downloaded", 10.5, p.text_faint));
-                }
-            }
-            if let Some(st) = state {
-                if let Ok(guard) = st.lock() {
-                    match guard.phase.as_str() {
-                        "running" => {
-                            ui.label(theme::mono(
-                                format!("downloading… {}", data::format_bytes(guard.got)),
-                                10.5,
-                                p.cyan,
-                            ));
-                        }
-                        "done" => {
-                            ui.label(theme::mono("done", 10.5, p.green));
-                        }
-                        "error" => {
-                            ui.label(theme::mono(
-                                guard.error.clone().unwrap_or_default(),
-                                10.5,
-                                p.red,
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let running = state
-                .as_ref()
-                .map(|s| s.lock().map(|g| g.phase == "running").unwrap_or(false))
-                .unwrap_or(false);
-            if running {
-                if ui.button("Cancel").clicked() {
-                    cancel.store(true, Ordering::SeqCst);
-                }
-            } else if ui
-                .add(
-                    egui::Button::new(theme::mono_med("Download", 12.0, p.cyan))
-                        .fill(Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE),
-                )
-                .clicked()
-            {
-                let shared_state = Arc::new(Mutex::new(DownloadState::default()));
-                let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                *state = Some(Arc::clone(&shared_state));
-                *cancel = Arc::clone(&cancel_flag);
-                let dest = dest.clone();
-                let url = url.to_string();
-                std::thread::spawn(move || {
-                    net::download_to(&url, &dest, &shared_state, &cancel_flag);
-                });
-            }
-        });
-    });
-}
-
-// ---- Kebab + sort menus -------------------------------------------------------
-
-fn kebab_menu(
-    app: &mut App,
-    ctx: &egui::Context,
-    p: &Palette,
-    group_id: &str,
-    kind: KebabKind,
-) -> Dialog {
-    let mut next = Dialog::Closed;
-    modal(ctx, p, "kebab", 320.0, |ui| {
-        let title = match kind {
-            KebabKind::User => "Group actions",
-            KebabKind::Saved => "Saved actions",
-            KebabKind::Global => "Global Network actions",
-        };
-        ui.label(theme::sans_bold(title, 16.0, p.text));
-        ui.add_space(6.0);
-        let ctx3 = ui.ctx().clone();
-        menu_item(ui, p, Icon::Speed, "Ping now", || {
-            app.ping_group(group_id, &ctx3);
-        });
-        if kind == KebabKind::User {
-            menu_item(ui, p, Icon::Upload, "Export / share…", || {
-                if crate::export::ExportState::for_group(app, group_id).is_some() {
-                    app.export_page = true;
-                    next = Dialog::Closed;
-                }
-            });
-            menu_item(ui, p, Icon::Pencil, "Rename…", || {
-                if let Some(g) = app.groups.group(group_id) {
-                    next = Dialog::Rename {
-                        group_id: g.id.clone(),
-                        name: g.name.clone(),
-                    };
-                }
-            });
-            menu_item(ui, p, Icon::Pin, "Pin / unpin", || {
-                if let Some(g) = app.groups.group_mut(group_id) {
-                    g.pinned = !g.pinned;
-                }
-                app.groups.save();
-            });
-            menu_item(ui, p, Icon::Trash, "Delete group…", || {
-                next = Dialog::ConfirmDeleteGroup {
-                    group_id: group_id.to_string(),
-                };
-            });
-        } else {
-            menu_item(ui, p, Icon::Refresh, "Clear pings", || {
-                if let Ok(mut g) = app.shared.pings.lock() {
-                    g.clear();
-                }
-            });
-            if kind == KebabKind::Global {
-                menu_item(ui, p, Icon::Folder, "Open data folder", || {
-                    if let Ok(dir) = npvt_core::engine::work_dir() {
-                        data::reveal(&dir);
-                    }
-                });
-            }
+            egui::Rect::from_center_size(
+                ui.min_rect().right_center() + Vec2::new(10.0, 0.0),
+                Vec2::splat(22.0),
+            ),
+            p.cyan,
+            icons::clipboard,
+            id,
+            "Copy",
+        ) {
+            clicked = true;
         }
     });
-    next
+    ui.add_space(6.0);
+    clicked
 }
 
-fn sort_menu(app: &mut App, ctx: &egui::Context, p: &Palette) -> Dialog {
-    let mut next = Dialog::SortMenu;
-    modal(ctx, p, "sort", 300.0, |ui| {
-        ui.label(theme::sans_bold("Sort members by", 16.0, p.text));
-        ui.add_space(6.0);
-        menu_item(ui, p, Icon::Check, "Name", || {
-            app.sort = SortKey::Name;
-            next = Dialog::Closed;
-        });
-        menu_item(ui, p, Icon::Speed, "Ping result", || {
-            app.sort = SortKey::Ping;
-            next = Dialog::Closed;
-        });
-        menu_item(ui, p, Icon::Server, "Newest first", || {
-            app.sort = SortKey::Created;
-            next = Dialog::Closed;
-        });
-    });
-    next
+#[cfg(windows)]
+fn pick_engine_binary() -> Option<std::path::PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("sing-box", &["exe"])
+        .pick_file()
 }
 
-fn engine_missing(_app: &mut App, ctx: &egui::Context, p: &Palette, message: &str) -> Dialog {
-    let mut close = false;
-    modal(ctx, p, "engine", 430.0, |ui| {
-        ui.label(theme::sans_bold("Engine not found", 17.0, p.red));
-        ui.label(theme::sans(message, 12.0, p.text_dim));
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button("Open download page").clicked() {
-                data::open_url("https://github.com/SagerNet/sing-box/releases");
-            }
-            if ui.button("Close").clicked() {
-                close = true;
-            }
-        });
-    });
-    if close {
-        Dialog::Closed
-    } else {
-        Dialog::EngineMissing {
-            message: message.to_string(),
-        }
-    }
+#[cfg(not(windows))]
+fn pick_engine_binary() -> Option<std::path::PathBuf> {
+    None
 }

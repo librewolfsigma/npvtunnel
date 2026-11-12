@@ -4,6 +4,42 @@ All notable changes to npvtunnel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versioning
 follows semver.
 
+## [0.4.0] - 2026-11-12
+
+### Changed
+
+- GUI rebuilt line-by-line against the reference design with full visual
+  verification (rendered under a headless compositor and compared to the
+  mockups): exact palette, spaced mono headers, gold premium badge, pulsing
+  power button, connection group card, group cards with pins/pings/trash,
+  floating add toolbar, bottom nav pills and the add-config sheet.
+- Every control in the mockups is now wired to real behavior:
+  - CONFIGS: expand/collapse-all, search, sort (name / ping / recently
+    added), per-group ping, pin-to-active, rename, delete confirmations,
+    member rows with per-config ping values, share/edit/remove actions and
+    subscription or monthly-quota traffic bars.
+  - HOME: PING action, live downlink/uplink (clash API stream), error card
+    with engine-missing guidance, Fastest member strategy on group connect.
+  - Share sheet: secrecy slider maps to container expiry (never / 30 days /
+    24 hours), passphrases require 8+ chars and confirmation, recipients
+    parse as base64url X25519 keys, exports are Ed25519-signed, plus a
+    copy-as-`npvt://`-link action.
+  - MORE: appearance (light/dark/auto), my public key (X25519 + Ed25519),
+    per-app proxy (block or allow-only via sing-box `process_name` rules),
+    settings (ports, DNS, engine path, log level, autostart Run-key entry,
+    connect-on-launch, monthly quota), user assets downloader, about/quit.
+- Traffic accounting adds lifetime counters so the monthly quota survives
+  disconnects; the monthly counter rolls automatically.
+- GUI binary renamed to `NPVTunnel.exe` (double-click product name).
+
+### Fixed
+
+- Locked-container import prompts for a passphrase instead of failing;
+  wrong passphrases show inline errors and can be retried.
+- Modal dialogs hug their content and scroll instead of stretching
+  full-height; Esc and click-outside close them.
+- Clipboard/QR/file import paths share one dedup + validation flow.
+
 ## [0.2.0] - 2026-11-11
 
 ### Added

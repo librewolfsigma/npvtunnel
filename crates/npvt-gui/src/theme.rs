@@ -1,296 +1,299 @@
-//! Visual identity: the exact dark green "terminal" look of the NPV Tunnel
-//! design, plus a light variant for the Light/Auto appearance setting.
+//! Visual theme: palette, fonts and egui style application.
 //!
-//! Fonts are embedded at compile time:
-//! - JetBrains Mono (Regular/Medium/Bold) for every tracked terminal-style
-//!   label (`[ CONNECTED ]`, `ACTIVE CONNECTION GROUP`, version, logs);
-//! - Roboto (Regular/Medium/Bold) for UI text.
-//!
-//! egui resolves font *families* only, so bold weights live in named
-//! families ("sans-bold", "mono-bold") and every bold label goes through
-//! [`mono_bold`] / [`sans_bold`] helpers - no reliance on synthesis.
+//! The palette mirrors the reference design: near-black backgrounds with a
+//! faint green tint, a mint/green accent for the tunnel state, teal for the
+//! active navigation item, cyan for ping actions and amber for upload stats.
 
-use egui::{
-    epaint::Shadow, Color32, Context, FontData, FontDefinitions, FontFamily, Margin, Rounding,
-    Stroke, Style,
-};
+use eframe::egui;
 
-/// One resolved palette. All colors come straight from the reference design.
-#[derive(Clone, Copy)]
-pub struct Palette {
-    pub window_bg: Color32,
-    pub card: Color32,
-    pub card_stroke: Color32,
-    pub input_bg: Color32,
-    pub text: Color32,
-    pub text_dim: Color32,
-    pub text_faint: Color32,
-    pub green: Color32,
-    pub green_dim: Color32,
-    pub green_deep: Color32,
-    pub green_border: Color32,
-    pub green_pill: Color32,
-    pub teal_bg: Color32,
-    pub teal_text: Color32,
-    pub cyan: Color32,
-    pub orange: Color32,
-    pub gold: Color32,
-    pub red: Color32,
-    pub scrim: Color32,
-    pub track: Color32,
-}
+/// Raw RGB helper for building palette entries.
+#[derive(Debug, Clone, Copy)]
+pub struct Color(pub u32);
 
-/// The reference dark palette.
-pub fn dark() -> Palette {
-    Palette {
-        window_bg: Color32::from_rgb(5, 8, 7),
-        card: Color32::from_rgb(13, 18, 16),
-        card_stroke: Color32::from_rgb(28, 38, 34),
-        input_bg: Color32::from_rgb(10, 14, 13),
-        text: Color32::from_rgb(236, 244, 240),
-        text_dim: Color32::from_rgb(146, 160, 154),
-        text_faint: Color32::from_rgb(94, 106, 101),
-        green: Color32::from_rgb(63, 217, 127),
-        green_dim: Color32::from_rgb(30, 122, 76),
-        green_deep: Color32::from_rgb(14, 34, 24),
-        green_border: Color32::from_rgb(74, 222, 128),
-        green_pill: Color32::from_rgb(17, 46, 32),
-        teal_bg: Color32::from_rgb(18, 64, 61),
-        teal_text: Color32::from_rgb(126, 217, 200),
-        cyan: Color32::from_rgb(56, 189, 248),
-        orange: Color32::from_rgb(245, 158, 11),
-        gold: Color32::from_rgb(234, 179, 8),
-        red: Color32::from_rgb(248, 113, 113),
-        scrim: Color32::from_rgba_unmultiplied(0, 0, 0, 168),
-        track: Color32::from_rgb(24, 32, 29),
+impl Color {
+    pub const fn c32(self) -> egui::Color32 {
+        let v = self.0;
+        egui::Color32::from_rgb((v >> 16) as u8, ((v >> 8) & 0xff) as u8, (v & 0xff) as u8)
     }
 }
 
-/// Inverted variant for the Light/Auto appearance setting (same layout).
-pub fn light() -> Palette {
-    Palette {
-        window_bg: Color32::from_rgb(243, 246, 244),
-        card: Color32::from_rgb(255, 255, 255),
-        card_stroke: Color32::from_rgb(223, 231, 227),
-        input_bg: Color32::from_rgb(250, 251, 250),
-        text: Color32::from_rgb(16, 33, 27),
-        text_dim: Color32::from_rgb(96, 112, 106),
-        text_faint: Color32::from_rgb(140, 154, 148),
-        green: Color32::from_rgb(14, 138, 74),
-        green_dim: Color32::from_rgb(63, 217, 127),
-        green_deep: Color32::from_rgb(224, 244, 231),
-        green_border: Color32::from_rgb(14, 138, 74),
-        green_pill: Color32::from_rgb(220, 242, 228),
-        teal_bg: Color32::from_rgb(204, 234, 230),
-        teal_text: Color32::from_rgb(11, 105, 98),
-        cyan: Color32::from_rgb(2, 132, 199),
-        orange: Color32::from_rgb(194, 120, 3),
-        gold: Color32::from_rgb(180, 133, 9),
-        red: Color32::from_rgb(220, 38, 38),
-        scrim: Color32::from_rgba_unmultiplied(20, 30, 26, 110),
-        track: Color32::from_rgb(226, 233, 230),
-    }
-}
-
-/// Which theme the user picked in MORE > Appearance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum ThemeMode {
     Light,
+    #[default]
     Dark,
     Auto,
 }
 
 impl ThemeMode {
-    #[allow(dead_code)] // stable settings-file vocabulary
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ThemeMode::Light => "light",
-            ThemeMode::Dark => "dark",
-            ThemeMode::Auto => "auto",
-        }
-    }
-    #[allow(dead_code)] // stable settings-file vocabulary
-    pub fn parse(value: &str) -> Self {
-        match value {
-            "light" => ThemeMode::Light,
-            "auto" => ThemeMode::Auto,
-            _ => ThemeMode::Dark,
+    /// All modes in display order.
+    pub const ALL: [ThemeMode; 3] = [ThemeMode::Light, ThemeMode::Dark, ThemeMode::Auto];
+}
+
+/// A resolved color set for one appearance.
+#[derive(Debug, Clone, Copy)]
+pub struct Palette {
+    pub bg: egui::Color32,
+    pub surface: egui::Color32,
+    pub surface_hi: egui::Color32,
+    pub border: egui::Color32,
+    pub border_sel: egui::Color32,
+    pub text: egui::Color32,
+    pub text_secondary: egui::Color32,
+    pub text_faint: egui::Color32,
+    pub accent: egui::Color32,
+    pub accent_bright: egui::Color32,
+    pub teal_pill: egui::Color32,
+    pub teal_text: egui::Color32,
+    pub cyan: egui::Color32,
+    pub amber: egui::Color32,
+    pub red: egui::Color32,
+    pub scrim: egui::Color32,
+    pub toast_bg: egui::Color32,
+}
+
+pub const DARK: Palette = Palette {
+    bg: Color(0x0A0D0A).c32(),
+    surface: Color(0x101510).c32(),
+    surface_hi: Color(0x0F2413).c32(),
+    border: Color(0x1D241D).c32(),
+    border_sel: Color(0x22C55E).c32(),
+    text: Color(0xF2F5F2).c32(),
+    text_secondary: Color(0x98A29A).c32(),
+    text_faint: Color(0x6B746B).c32(),
+    accent: Color(0x22C55E).c32(),
+    accent_bright: Color(0x4ADE80).c32(),
+    teal_pill: Color(0x0E5F58).c32(),
+    teal_text: Color(0x5EEAD4).c32(),
+    cyan: Color(0x22D3EE).c32(),
+    amber: Color(0xFBBF24).c32(),
+    red: Color(0xF87171).c32(),
+    scrim: egui::Color32::from_black_alpha(180),
+    toast_bg: Color(0x1A221A).c32(),
+};
+
+pub const LIGHT: Palette = Palette {
+    bg: Color(0xF3F6F3).c32(),
+    surface: Color(0xFFFFFF).c32(),
+    surface_hi: Color(0xE7F7EC).c32(),
+    border: Color(0xD9E0D9).c32(),
+    border_sel: Color(0x16A34A).c32(),
+    text: Color(0x16211A).c32(),
+    text_secondary: Color(0x5C685F).c32(),
+    text_faint: Color(0x8B968D).c32(),
+    accent: Color(0x16A34A).c32(),
+    accent_bright: Color(0x22C55E).c32(),
+    teal_pill: Color(0x0F766E).c32(),
+    teal_text: Color(0x0F766E).c32(),
+    cyan: Color(0x0891B2).c32(),
+    amber: Color(0xB45309).c32(),
+    red: Color(0xDC2626).c32(),
+    scrim: egui::Color32::from_black_alpha(110),
+    toast_bg: Color(0xE4EFE6).c32(),
+};
+
+const MONO_SPACED_FAMILY: &str = "inter_sb";
+const BOLD_FAMILY: &str = "inter_bold";
+const MONO_BOLD_FAMILY: &str = "mono_bold";
+
+/// Load the bundled fonts (Inter for text, JetBrains Mono for the technical
+/// labels) and map egui text styles onto them.
+pub fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    let mut add = |name: &str, bytes: &'static [u8]| {
+        fonts
+            .font_data
+            .insert(name.to_owned(), egui::FontData::from_owned(bytes.to_vec()));
+    };
+    add(
+        "inter_regular",
+        include_bytes!("../assets/fonts/Inter-Regular.otf"),
+    );
+    add(
+        "inter_semibold",
+        include_bytes!("../assets/fonts/Inter-SemiBold.otf"),
+    );
+    add(
+        "inter_bold",
+        include_bytes!("../assets/fonts/Inter-Bold.otf"),
+    );
+    add(
+        "jbm_regular",
+        include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
+    );
+    add(
+        "jbm_bold",
+        include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
+    );
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "inter_regular".to_owned());
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(MONO_SPACED_FAMILY.into()), {
+            vec!["inter_semibold".to_owned()]
+        });
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(BOLD_FAMILY.into()), {
+            vec!["inter_bold".to_owned()]
+        });
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(MONO_BOLD_FAMILY.into()), {
+            vec!["jbm_bold".to_owned()]
+        });
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "jbm_regular".to_owned());
+
+    ctx.set_fonts(fonts);
+}
+
+/// Resolve `Auto` into a concrete palette.
+pub fn resolve(mode: ThemeMode) -> Palette {
+    match mode {
+        ThemeMode::Light => LIGHT,
+        ThemeMode::Dark => DARK,
+        ThemeMode::Auto => {
+            if system_prefers_light() {
+                LIGHT
+            } else {
+                DARK
+            }
         }
     }
 }
 
-/// Insert a space between every character so short terminal-style labels
-/// render with the wide tracking of the reference design.
-pub fn tracked(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 2);
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        out.push(c);
-        if chars.peek().is_some() {
+/// Apply palette + typography to the egui context.
+pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
+    let p = resolve(mode);
+    install_fonts(ctx);
+
+    let mut style = (*ctx.style()).clone();
+    style.text_styles = [
+        (
+            egui::TextStyle::Body,
+            egui::FontId::new(13.5, egui::FontFamily::Proportional),
+        ),
+        (
+            egui::TextStyle::Small,
+            egui::FontId::new(11.0, egui::FontFamily::Proportional),
+        ),
+        (
+            egui::TextStyle::Button,
+            egui::FontId::new(13.5, egui::FontFamily::Name(MONO_SPACED_FAMILY.into())),
+        ),
+        (
+            egui::TextStyle::Heading,
+            egui::FontId::new(19.0, egui::FontFamily::Name(BOLD_FAMILY.into())),
+        ),
+        (
+            egui::TextStyle::Monospace,
+            egui::FontId::new(12.5, egui::FontFamily::Monospace),
+        ),
+    ]
+    .into();
+
+    let mut v = egui::Visuals::dark();
+    if mode == ThemeMode::Light || (mode == ThemeMode::Auto && system_prefers_light()) {
+        v = egui::Visuals::light();
+    }
+    v.override_text_color = Some(p.text);
+    v.window_fill = p.bg;
+    v.panel_fill = p.bg;
+    v.extreme_bg_color = p.surface;
+    v.faint_bg_color = p.surface;
+    v.selection.bg_fill = p.accent.gamma_multiply(0.35);
+    v.selection.stroke = egui::Stroke::new(1.0, p.accent);
+    v.widgets.noninteractive.bg_fill = p.surface;
+    v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
+    v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, p.text_secondary);
+    v.widgets.inactive.bg_fill = p.surface;
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, p.border);
+    v.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, p.text);
+    v.widgets.hovered.bg_fill = p.surface_hi;
+    v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, p.border_sel);
+    v.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, p.text);
+    v.widgets.active.bg_fill = p.surface_hi;
+    v.widgets.active.fg_stroke = egui::Stroke::new(1.0, p.accent);
+    v.widgets.active.bg_stroke = egui::Stroke::new(1.0, p.accent);
+    style.visuals = v;
+    ctx.set_style(style);
+}
+
+/// Font for the spaced monospace-style labels ("N P V   T U N N E L").
+pub fn mono(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Monospace)
+}
+
+pub fn mono_bold(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name(MONO_BOLD_FAMILY.into()))
+}
+
+pub fn semibold(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name(MONO_SPACED_FAMILY.into()))
+}
+
+pub fn bold(size: f32) -> egui::FontId {
+    egui::FontId::new(size, egui::FontFamily::Name(BOLD_FAMILY.into()))
+}
+
+/// Letter-space a string by inserting thin gaps (the design's wide tracking).
+pub fn spaced(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 3);
+    for (i, ch) in text.chars().enumerate() {
+        if i > 0 {
             out.push(' ');
         }
+        out.push(ch);
     }
     out
 }
 
-/// Register the embedded fonts and the named weight families.
-pub fn set_fonts(ctx: &Context) {
-    let mut fonts = FontDefinitions::default();
-    let mut add = |name: &str, bytes: &'static [u8]| {
-        fonts
-            .font_data
-            .insert(name.to_owned(), FontData::from_static(bytes));
-    };
-    add(
-        "jb-reg",
-        include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
-    );
-    add(
-        "jb-med",
-        include_bytes!("../assets/fonts/JetBrainsMono-Medium.ttf"),
-    );
-    add(
-        "jb-bold",
-        include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
-    );
-    add(
-        "rb-reg",
-        include_bytes!("../assets/fonts/Roboto-Regular.ttf"),
-    );
-    add(
-        "rb-med",
-        include_bytes!("../assets/fonts/Roboto-Medium.ttf"),
-    );
-    add("rb-bold", include_bytes!("../assets/fonts/Roboto-Bold.ttf"));
-
-    let prop = fonts.families.entry(FontFamily::Proportional).or_default();
-    prop.clear();
-    prop.push("rb-reg".into());
-    prop.push("rb-med".into());
-    prop.push("rb-bold".into());
-
-    let mono = fonts.families.entry(FontFamily::Monospace).or_default();
-    mono.clear();
-    mono.push("jb-reg".into());
-    mono.push("rb-reg".into());
-
-    let named = &mut fonts.families;
-    named.insert(
-        FontFamily::Name("sans-med".into()),
-        vec!["rb-med".into(), "rb-reg".into()],
-    );
-    named.insert(
-        FontFamily::Name("sans-bold".into()),
-        vec!["rb-bold".into(), "rb-med".into(), "rb-reg".into()],
-    );
-    named.insert(
-        FontFamily::Name("mono".into()),
-        vec!["jb-reg".into(), "rb-reg".into()],
-    );
-    named.insert(
-        FontFamily::Name("mono-med".into()),
-        vec!["jb-med".into(), "jb-reg".into()],
-    );
-    named.insert(
-        FontFamily::Name("mono-bold".into()),
-        vec!["jb-bold".into(), "jb-med".into(), "jb-reg".into()],
-    );
-    ctx.set_fonts(fonts);
-}
-
-/// Apply palette + spacing to the context.
-pub fn set_visuals(ctx: &Context, p: &Palette) {
-    let mut style = Style::default();
-    let v = &mut style.visuals;
-    v.panel_fill = p.window_bg;
-    v.window_fill = p.card;
-    v.extreme_bg_color = p.input_bg;
-    v.override_text_color = Some(p.text);
-    v.window_stroke = Stroke::new(1.0_f32, p.card_stroke);
-    v.window_rounding = Rounding::same(14.0);
-    v.window_shadow = Shadow::NONE;
-    v.popup_shadow = Shadow::NONE;
-    v.selection.stroke = Stroke::new(1.0_f32, p.green);
-    v.selection.bg_fill = p.green_deep;
-    v.hyperlink_color = p.cyan;
-    for w in [
-        &mut v.widgets.noninteractive,
-        &mut v.widgets.inactive,
-        &mut v.widgets.hovered,
-        &mut v.widgets.active,
-        &mut v.widgets.open,
-    ] {
-        w.fg_stroke = Stroke::new(1.0_f32, p.text);
-        w.bg_stroke = Stroke::new(1.0_f32, p.card_stroke);
-        w.rounding = Rounding::same(10.0);
+#[cfg(windows)]
+fn system_prefers_light() -> bool {
+    let output = std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            "/v",
+            "AppsUseLightTheme",
+        ])
+        .output();
+    match output {
+        Ok(o) => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            text.to_ascii_lowercase().contains("0x1")
+        }
+        Err(_) => false,
     }
-    v.widgets.noninteractive.bg_fill = p.card;
-    v.widgets.inactive.bg_fill = p.input_bg;
-    v.widgets.hovered.bg_fill = p.green_deep;
-    v.widgets.active.bg_fill = p.green_deep;
-    v.widgets.hovered.weak_bg_fill = p.green_deep;
-    v.widgets.inactive.weak_bg_fill = p.input_bg;
-    v.widgets.noninteractive.weak_bg_fill = p.card;
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 7.0);
-    style.spacing.menu_margin = Margin::same(6.0);
-    style.spacing.interact_size = egui::vec2(40.0, 30.0);
-    let visuals_copy = style.visuals.clone();
-    ctx.all_styles_mut(|s| *s = style.clone());
-    ctx.set_visuals(visuals_copy);
 }
 
-// ---- RichText builders -------------------------------------------------
-
-/// Regular UI text.
-pub fn sans(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Proportional)
+#[cfg(not(windows))]
+fn system_prefers_light() -> bool {
+    false
 }
 
-/// Medium-weight UI text.
-pub fn sans_med(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Name("sans-med".into()))
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Bold UI text.
-pub fn sans_bold(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Name("sans-bold".into()))
-}
+    #[test]
+    fn spaced_inserts_gaps() {
+        assert_eq!(spaced("NPV"), "N P V");
+        assert_eq!(spaced(""), "");
+    }
 
-/// Terminal monospace text.
-pub fn mono(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Name("mono".into()))
-}
-
-/// Medium monospace text.
-pub fn mono_med(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Name("mono-med".into()))
-}
-
-/// Bold monospace text.
-pub fn mono_bold(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    egui::RichText::new(text)
-        .size(size)
-        .color(color)
-        .family(FontFamily::Name("mono-bold".into()))
-}
-
-/// Tracked regular monospace label, as in `ACTIVE CONNECTION GROUP`.
-pub fn mono_label_tracked(text: impl Into<String>, size: f32, color: Color32) -> egui::RichText {
-    mono(tracked(text.into().as_str()), size, color)
+    #[test]
+    fn palette_conversion() {
+        let green = Color(0x22C55E);
+        assert_eq!(green.c32(), egui::Color32::from_rgb(0x22, 0xC5, 0x5E));
+    }
 }

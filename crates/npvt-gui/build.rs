@@ -1,14 +1,13 @@
-//! Embeds the Windows resource icon (Explorer + taskbar) into NPVTunnel.exe.
-//! The in-app icon is drawn at runtime by `icons::app_icon`.
+//! Build script: embed the application icon into the Windows executable so
+//! the taskbar, Start menu and Explorer all show the NPVTunnel icon.
 
 fn main() {
-    #[cfg(windows)]
-    {
-        let icon = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/app.ico");
-        if std::path::Path::new(icon).exists() {
-            let mut res = winresource::WindowsResource::new();
-            res.set_icon(icon);
-            res.compile().expect("windows resource compile");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let mut res = winresource::WindowsResource::new();
+        res.set_icon("assets/icon.ico");
+        if let Err(err) = res.compile() {
+            eprintln!("warning: could not embed icon resource: {err}");
         }
     }
+    println!("cargo:rerun-if-changed=assets/icon.ico");
 }
