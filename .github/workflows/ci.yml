@@ -51,9 +51,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
+      # The runner image ships a current stable Rust toolchain (kept up to
+      # date with the image). The previous dtolnay/rust-toolchain hash pin
+      # triggered zizmor's impostor-commit audit as a rate-limit false
+      # positive on GitHub-hosted runners, so the preinstalled toolchain is
+      # used instead.
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
