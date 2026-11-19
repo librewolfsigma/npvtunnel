@@ -8,6 +8,9 @@ vault.json
 *.npvt
 *.npvs
 *.npvt2
+# committed cross-language interop fixtures are exempt
+!crates/npvt-core/tests/fixtures/*.npvt2
+!tests/NpvTunnel.Core.Tests/Vectors/*.npvt2
 /dist
 # C# (.NET) build artifacts
 bin/

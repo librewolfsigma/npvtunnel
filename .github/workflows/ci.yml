@@ -33,7 +33,7 @@ jobs:
       # `cargo deny check advisories licenses sources` per crate, and CodeQL
       # runs below. Re-enable by deleting the `select` line once the
       # template's downloader works again.
-      select: "meta,changes,scorecard,ai-integrity,secrets,hygiene,docs,rust,csharp,quality-ratchet"
+      select: "scorecard,ai-integrity,secrets,hygiene,docs,rust,csharp,quality-ratchet"
     permissions:
       contents: read
       security-events: write
