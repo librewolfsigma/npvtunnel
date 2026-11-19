@@ -40,3 +40,20 @@ indent_style = tab
 indent_style = unset
 indent_size = unset
 trim_trailing_whitespace = false
+
+# Binary crypto interop fixtures: no text properties apply.
+[crates/npvt-core/tests/fixtures/*.npvt2]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+
+[tests/NpvTunnel.Core.Tests/Vectors/*.npvt2]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
