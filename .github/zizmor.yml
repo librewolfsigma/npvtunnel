@@ -1,0 +1,17 @@
+# Repo-owned zizmor policy.
+#
+# Keeps the strong default: every `uses:` must be pinned to a commit SHA,
+# with the documented exception of calling the Master CI reusable
+# workflows by release tag. The master-ci v2.19.1 zizmor flags the
+# long-standing dtolnay/rust-toolchain hash pin as impostor-commit even
+# though the SHA exists in the referenced repository (verified 2026-11-19,
+# commit b725eda525362e7cf34af9a7243cac1e3f01a7ec by David Tolnay); the
+# finding is an unauthenticated-API false positive, so that audit is
+# disabled here while every other audit keeps enforcing.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "WasewaseX/master-ci/*": ref-pin
+        "*": hash-pin
+  impostor-commit: false
