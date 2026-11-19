@@ -292,7 +292,7 @@ pub fn radio_row(
             Vec2::new(width - 40.0, height - 30.0),
         ),
         desc,
-        FontId::new(12.0, egui::FontFamily::Proportional),
+        theme::body(),
         palette.text_faint,
     );
     resp.clicked()
@@ -322,7 +322,7 @@ pub fn radio_row_disabled(ui: &mut egui::Ui, palette: Palette, title: &str, desc
         egui::Align2::LEFT_TOP,
         Pos2::new(rect.left() + 34.0, rect.top() + 30.0),
         desc,
-        FontId::new(12.0, egui::FontFamily::Proportional),
+        theme::body(),
         dim,
     );
 }

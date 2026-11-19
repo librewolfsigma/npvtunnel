@@ -4,6 +4,37 @@ All notable changes to npvtunnel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versioning
 follows semver.
 
+## [0.5.0] - 2026-11-19
+
+### Added
+
+- C# reference implementation of the whole stack under `src/`:
+  `NpvTunnel.Core` (portable library), `NpvTunnel.Cli` (console app) and
+  `NpvTunnel.App` (WPF desktop GUI, console-free `WinExe`). Built and
+  tested on every push by the master-ci `csharp` job; the WPF project
+  compiles cross-platform with `EnableWindowsTargeting`.
+- `.npvs` reading compatibility (`NpvsReader`): v1 NPVS containers with a
+  single JSON object, an array bundle or `{"profiles": [...]}`, `npvs://`
+  links carrying container bytes or URI lists, and subscription text
+  (plain or base64-wrapped URI lists, `#` comments allowed). Wired into
+  the batch importer (CLI `import` and the GUI import card).
+- Cross-language crypto interop: the C# port decodes containers produced
+  by the Rust implementation and vice versa (Argon2id, XChaCha20-Poly1305,
+  X25519, Ed25519, HKDF-SHA-256 all byte-exact). Committed fixtures keep
+  the contract explicit in both test suites.
+- `cargo run --example genvec` generates Rust-encoded v2 vectors.
+- `EngineRunner` moved into `npvt-core` so the CLI and the GUI share one
+  process manager (spawn, liveness probe, stop).
+
+### Changed
+
+- The CI template is pinned to `v2.19.1` (the scanaislop C# column) and
+  the `csharp` job joined the enforced `select` list.
+- `dialogs.rs`/`pages.rs`/`widgets.rs` share one `theme::body()` font
+  helper instead of repeating the same literal ten times.
+- The legacy v1 probe no longer misclassifies `NPVT2\0` (v2) files as
+  v1-family containers.
+
 ## [0.4.0] - 2026-11-12
 
 ### Changed

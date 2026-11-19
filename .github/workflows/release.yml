@@ -53,6 +53,17 @@ jobs:
       - name: Run tests (release)
         run: cargo test --locked --release
 
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish C# apps (win-x64, framework-dependent)
+        shell: pwsh
+        run: |
+          dotnet publish src/NpvTunnel.App -c Release -r win-x64 --self-contained false -o dist/dotnet
+          dotnet publish src/NpvTunnel.Cli -c Release -r win-x64 --self-contained false -o dist/dotnet
+          if (-not (Test-Path dist/dotnet/NPVTunnel.exe)) { Write-Error "C# GUI exe missing"; exit 1 }
+
       - name: Fetch bundled sing-box engine
         shell: pwsh
         env:

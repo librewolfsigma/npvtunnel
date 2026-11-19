@@ -1,0 +1,46 @@
+<UserControl x:Class="NpvTunnel.App.Pages.MorePage"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Style="{StaticResource CardBorder}" Margin="0,0,0,14">
+      <StackPanel>
+        <TextBlock Text="Engine" Style="{StaticResource Heading}" />
+        <TextBlock x:Name="EnginePath" Style="{StaticResource Muted}"
+                    TextWrapping="Wrap" Text="engine not located" />
+        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+          <Button Content="Verify engine" Style="{StaticResource PrimaryButton}"
+                  Click="OnVerifyClick" />
+          <Button Content="Install to data dir" Style="{StaticResource PrimaryButton}"
+                  Click="OnInstallClick" Margin="10,0,0,0" />
+        </StackPanel>
+        <TextBlock x:Name="EngineStatus" Style="{StaticResource Muted}"
+                    Margin="0,10,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="1" Style="{StaticResource CardBorder}">
+      <StackPanel>
+        <TextBlock Text="Doctor" Style="{StaticResource Heading}" />
+        <ItemsControl x:Name="DoctorList" ItemsSource="{Binding Doctor}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" Foreground="{StaticResource TextSecondary}"
+                          Margin="0,2" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+          <Button Content="Run audit" Style="{StaticResource PrimaryButton}"
+                  Click="OnDoctorClick" />
+          <Button Content="Generate identity" Style="{StaticResource PrimaryButton}"
+                  Click="OnKeygenClick" Margin="10,0,0,0" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

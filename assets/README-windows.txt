@@ -30,3 +30,10 @@ proxy listens on 127.0.0.1 only - it is never exposed to your LAN.
 
 Security note: verify this zip against the SHA256SUMS.txt file published next
 to it in the GitHub release.
+
+dotnet/ folder
+--------------
+The C# reference apps (NPVTunnel.exe WPF GUI and npvtunnel.exe CLI)
+built from src/. They require the .NET 8 Desktop Runtime
+(https://dotnet.microsoft.com/download/dotnet/8.0). The Rust binaries in
+this archive are self-contained and need no runtime.

@@ -447,11 +447,7 @@ impl App {
             .desired_width(ui.available_width())
             .ui(ui);
         if let Some(err) = &self.ms.pass_err {
-            ui.label(
-                egui::RichText::new(err)
-                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
-                    .color(p.red),
-            );
+            ui.label(egui::RichText::new(err).font(theme::body()).color(p.red));
         }
         ui.add_space(12.0);
         match footer_custom(ui, p, "Unlock", p.accent) {
@@ -546,7 +542,7 @@ impl App {
             if ui
                 .add(egui::Button::new(
                     egui::RichText::new("Copy as npvt:// link")
-                        .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                        .font(theme::body())
                         .color(p.cyan),
                 ))
                 .clicked()
@@ -693,16 +689,12 @@ impl App {
         }
         ui.label(
             egui::RichText::new("Available to the recipients you select.")
-                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .font(theme::body())
                 .color(p.text_faint),
         );
         ui.add_space(10.0);
         if let Some(err) = &self.ms.export.err {
-            ui.label(
-                egui::RichText::new(err)
-                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
-                    .color(p.red),
-            );
+            ui.label(egui::RichText::new(err).font(theme::body()).color(p.red));
         }
         ui.add_space(4.0);
     }
@@ -867,7 +859,7 @@ impl App {
         ui.add_space(8.0);
         ui.label(
             egui::RichText::new("Process names, one per line (e.g. steam.exe). Block routes those apps outside the tunnel; Allow only tunnels those apps.")
-                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .font(theme::body())
                 .color(p.text_faint),
         );
         egui::TextEdit::multiline(&mut self.ms.per_app_text)
@@ -912,7 +904,7 @@ impl App {
             egui::RichText::new(
                 "Give this key to a creator so they can send you key-locked configs.",
             )
-            .font(FontId::new(12.0, egui::FontFamily::Proportional))
+            .font(theme::body())
             .color(p.text_faint),
         );
         ui.add_space(10.0);
@@ -1010,7 +1002,7 @@ impl App {
         ui.add_space(4.0);
         ui.label(
             egui::RichText::new("Geo data files used by custom config routing.")
-                .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                .font(theme::body())
                 .color(p.text_faint),
         );
         ui.add_space(10.0);
@@ -1090,7 +1082,7 @@ impl App {
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new("Security-hardened .npvt tunnel client.\nMIT licensed, source at github.com/librewolfsigma/npvtunnel")
-                    .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                    .font(theme::body())
                     .color(p.text_secondary),
             );
         });
@@ -1162,7 +1154,7 @@ fn secrecy_word(t: f32) -> &'static str {
 fn field_label(ui: &mut egui::Ui, p: Palette, text: &str) {
     ui.label(
         egui::RichText::new(text)
-            .font(FontId::new(12.0, egui::FontFamily::Proportional))
+            .font(theme::body())
             .color(p.text_secondary),
     );
 }

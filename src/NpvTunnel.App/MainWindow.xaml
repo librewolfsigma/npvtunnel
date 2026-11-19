@@ -1,0 +1,39 @@
+<Window x:Class="NpvTunnel.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:pages="clr-namespace:NpvTunnel.App.Pages"
+        Title="NPV TUNNEL" Style="{StaticResource WindowShell}">
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="220" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <Border Grid.Column="0" Background="#0E1428" Padding="12">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="6,6,0,18">
+          <Ellipse Width="14" Height="14" Fill="{StaticResource Accent}"
+                    Margin="0,0,10,0" />
+          <TextBlock Text="NPV TUNNEL" FontSize="16" FontWeight="Bold"
+                      Foreground="{StaticResource TextPrimary}" />
+        </StackPanel>
+        <Button x:Name="NavHome" Content="Home" Style="{StaticResource SidebarButton}"
+                Click="OnNavClick" Tag="Home" FontWeight="SemiBold"
+                Foreground="{StaticResource TextPrimary}" />
+        <Button Content="Configs" Style="{StaticResource SidebarButton}"
+                Click="OnNavClick" Tag="Configs" Margin="0,4,0,0" />
+        <Button Content="Log" Style="{StaticResource SidebarButton}"
+                Click="OnNavClick" Tag="Log" Margin="0,4,0,0" />
+        <Button Content="More" Style="{StaticResource SidebarButton}"
+                Click="OnNavClick" Tag="More" Margin="0,4,0,0" />
+        <Button x:Name="QuitButton" Content="Quit"
+                Style="{StaticResource SidebarButton}" Click="OnQuitClick"
+                Margin="0,18,0,0" />
+      </StackPanel>
+    </Border>
+
+    <ContentControl Grid.Column="1" x:Name="PageHost" Margin="18">
+      <pages:HomePage />
+    </ContentControl>
+  </Grid>
+</Window>

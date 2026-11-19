@@ -28,7 +28,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use base64::Engine as _;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer, VerifyingKey};
 use hkdf::Hkdf;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -38,6 +38,8 @@ use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
 use crate::profile::{unix_now, Profile};
+
+pub use ed25519_dalek::SigningKey;
 
 /// Container magic.
 pub const MAGIC: &[u8; 6] = b"NPVT2\0";

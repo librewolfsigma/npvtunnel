@@ -9,3 +9,8 @@ vault.json
 *.npvs
 *.npvt2
 /dist
+# C# (.NET) build artifacts
+bin/
+obj/
+*.user
+global.json.bak

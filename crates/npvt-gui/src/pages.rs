@@ -127,7 +127,7 @@ impl crate::app::App {
                 let galley = ui.ctx().fonts(|f| {
                     f.layout(
                         err.clone(),
-                        FontId::new(12.0, egui::FontFamily::Proportional),
+                        theme::body(),
                         p.text_secondary,
                         rect.width() - 32.0,
                     )
@@ -912,7 +912,7 @@ impl crate::app::App {
                 }
                 ui.label(
                     egui::RichText::new("Auto follows your device's light or dark setting.")
-                        .font(FontId::new(12.0, egui::FontFamily::Proportional))
+                        .font(theme::body())
                         .color(p.text_faint),
                 );
                 ui.add_space(10.0);
@@ -1013,7 +1013,7 @@ impl crate::app::App {
         let galley = ui.ctx().fonts(|f| {
             f.layout(
                 desc.to_owned(),
-                FontId::new(12.0, egui::FontFamily::Proportional),
+                theme::body(),
                 p.text_faint,
                 rect.width() - 60.0,
             )

@@ -228,6 +228,11 @@ pub fn apply(ctx: &egui::Context, mode: ThemeMode) {
     ctx.set_style(style);
 }
 
+/// Font for ordinary body-size labels (12.0 proportional).
+pub fn body() -> egui::FontId {
+    egui::FontId::new(12.0, egui::FontFamily::Proportional)
+}
+
 /// Font for the spaced monospace-style labels ("N P V   T U N N E L").
 pub fn mono(size: f32) -> egui::FontId {
     egui::FontId::new(size, egui::FontFamily::Monospace)

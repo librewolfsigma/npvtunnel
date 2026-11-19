@@ -154,7 +154,19 @@ Re-export such configs as v2 containers ( creators: `npvtunnel export`).
 ```text
 crates/npvt-core   profiles, URI import, .npvt v2 container, vault, engine glue
 crates/npvt-cli    the npvtunnel binary
+src/NpvTunnel.Core C# port of the core (same formats, byte-exact interop)
+src/NpvTunnel.Cli  C# console app (npvtunnel.exe)
+src/NpvTunnel.App  C# WPF desktop GUI (NPVTunnel.exe, console-free)
+tests/             xunit suite incl. cross-language crypto vectors
 ```
+
+## .npvs files
+
+`.npvs` is the NPV Tunnel shared-file family. NPVTunnel reads every shape:
+v1 NPVS containers (single config, array bundles or `{"profiles": [...]}`),
+`npvs://` links carrying container bytes or URI lists, and subscription text
+(plain or base64-wrapped URI lists, `#` comments allowed). Import them from
+the CLI (`npvtunnel import file.npvs`) or the GUI import card.
 
 ## Roadmap
 

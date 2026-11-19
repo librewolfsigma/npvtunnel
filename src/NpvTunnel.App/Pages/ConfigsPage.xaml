@@ -1,0 +1,54 @@
+<UserControl x:Class="NpvTunnel.App.Pages.ConfigsPage"
+              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Style="{StaticResource CardBorder}" Margin="0,0,0,14">
+      <StackPanel>
+        <TextBlock Text="Import" Style="{StaticResource Heading}" />
+        <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                    Text="Paste a share link, npvt:// or npvs:// link; or pick a .npvt container, .npvs bundle or subscription text file. The default action is add to library, never silent connect." />
+        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+          <TextBox x:Name="LinkBox" Width="420" Padding="8,6"
+                    Background="#0E1428" Foreground="{StaticResource TextPrimary}"
+                    BorderBrush="{StaticResource Divider}" BorderThickness="1" />
+          <Button Content="Add link" Style="{StaticResource PrimaryButton}"
+                  Click="OnAddLinkClick" Margin="10,0,0,0" />
+          <Button Content="Open file..." Style="{StaticResource PrimaryButton}"
+                  Click="OnOpenFileClick" Margin="10,0,0,0" />
+        </StackPanel>
+        <TextBlock x:Name="ImportStatus" Style="{StaticResource Muted}"
+                    Margin="0,10,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="1" Style="{StaticResource CardBorder}">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Profiles" Style="{StaticResource Heading}" />
+        <ListBox Grid.Row="1" x:Name="ProfileList"
+                  Background="Transparent" BorderThickness="0"
+                  ItemsSource="{Binding Profiles}"
+                  SelectedItem="{Binding Selected, Mode=TwoWay}"
+                  DisplayMemberPath="Name" Margin="0,4,0,0" />
+      </Grid>
+    </Border>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
+      <Button Content="Connect selected" Style="{StaticResource PrimaryButton}"
+              Click="OnConnectClick" />
+      <Button Content="Remove selected" Style="{StaticResource PrimaryButton}"
+              Click="OnRemoveClick" Margin="10,0,0,0" />
+      <Button Content="Refresh" Style="{StaticResource PrimaryButton}"
+              Click="OnRefreshClick" Margin="10,0,0,0" />
+    </StackPanel>
+  </Grid>
+</UserControl>
