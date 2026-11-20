@@ -20,13 +20,9 @@ use std::time::{Duration, Instant};
 use crate::error::{Error, Result};
 use crate::profile::{Credential, Profile, Protocol, Transport};
 
-/// Expected SHA-256 of the bundled sing-box binary.
-///
-/// Set this at build time (e.g. via `NPVT_ENGINE_SHA256` env var) to enable
-/// authenticity verification. On each startup, the found sing-box binary is
-/// hashed and compared to this value; a mismatch aborts startup.
-///
-/// If unset (empty), verification is skipped.
+/// Expected SHA-256 of the bundled sing-box binary, pinned at build time via
+/// `NPVT_ENGINE_SHA256`. On startup the found binary is hashed and compared;
+/// a mismatch aborts. Unset (or empty) skips verification.
 pub const EXPECTED_ENGINE_SHA256: Option<&'static str> = option_env!("NPVT_ENGINE_SHA256");
 
 /// Default local SOCKS inbound port.

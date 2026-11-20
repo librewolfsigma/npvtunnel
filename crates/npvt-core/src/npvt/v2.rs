@@ -328,11 +328,9 @@ pub struct Decoded {
 
 /// Generate a new creator signing key (Ed25519).
 pub fn generate_signing_key() -> SigningKey {
-    // ed25519-dalek 3 sits on rand_core 0.10, which no longer ships an
-    // `OsRng`, and the workspace's rand_core is still 0.6, so the upstream
-    // `SigningKey::generate` has no RNG to accept. Drawing the 32-byte seed
-    // ourselves and going through `from_bytes` is byte-for-byte what the
-    // upstream implementation does (fill 32 bytes, then `from_bytes`).
+    // ed25519-dalek 3 sits on rand_core 0.10 (no OsRng there) while the
+    // workspace stays on rand_core 0.6, so the seed is drawn here and the
+    // key built via from_bytes - what the upstream generate() does anyway.
     let mut seed = [0u8; 32];
     OsRng.fill_bytes(&mut seed);
     SigningKey::from_bytes(&seed)

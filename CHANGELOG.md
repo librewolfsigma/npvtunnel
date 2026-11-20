@@ -49,6 +49,47 @@ follows semver.
   Valid-only-means-unsigned contract, selection restore, name dedup,
   the named-mutex slot, one finding per check).
 
+### Dependencies (merged PRs)
+
+- `argon2` 0.5.3 → 0.6.0, `sha2` 0.10.9 → 0.11.1, `hkdf` 0.12.4 → 0.13.0,
+  `ed25519-dalek` 2.2.0 → 3.0.0, `dirs` 5.0.1 → 7.0.0 (dependabot).
+- `npvt-core`: signing-key generation adapted to ed25519-dalek 3.0 -
+  rand_core 0.10 no longer ships an `OsRng`, so the 32-byte seed is drawn
+  with the workspace's rand_core 0.6 `OsRng` and the key built via
+  `from_bytes` (byte-for-byte what upstream `SigningKey::generate` does).
+- `npvt-core`: `sha256_file` hex-encodes the digest bytes explicitly
+  (sha2 0.11's output array no longer implements `LowerHex`).
+
+### Added (merged PR, ported to the rebuilt GUI)
+
+- TUN mode: `npvt-core::engine::config` can add a TUN inbound
+  (`auto_route`, `strict_route`, default address `10.255.0.1/24`, MTU
+  1500) and point the route final at it; the GUI settings dialog gates it
+  behind a CIDR-validated address field, the CLI renders without TUN.
+- Kill switch: `npvt-gui` `firewall.rs` installs netsh firewall rules
+  (block all outbound, exempt loopback/link-local) after a successful
+  engine start and lifts them on explicit disconnect - a dead engine
+  deliberately keeps the block until reconnect or stop. The netsh
+  argument builders are unit-tested.
+- Per-user file association: `npvt-gui` `assoc.rs` registers
+  `NPVTunnel.exe "%1"` for `.npvt` / `.npvs` under `HKCU\Software\Classes`
+  (no elevation); a double-clicked container goes through the normal
+  import security card. The extension match normalizes
+  `Path::extension` (no leading dot) against the registry form.
+- System tray (Windows): close-to-tray with show / connect-toggle /
+  quit menu entries, rebuilt for the real tray-icon 0.10 API (global
+  `MenuEvent`/`TrayIconEvent` receivers, `PredefinedMenuItem::separator`).
+- Engine authenticity pinning: `npvt-core::engine::verify_engine_binary`
+  compares the found sing-box against `NPVT_ENGINE_SHA256` embedded at
+  build time; the GUI launch path refuses a mismatched binary.
+
+### Removed (PR hygiene)
+
+- The `.kilo/` AI planning artifact from the feature branch.
+- The `set_owner_only` no-op stub that claimed DACL behavior it could
+  not implement under `forbid(unsafe_code)`, and the sham
+  constant-is-non-empty tests from the feature branch.
+
 ## [0.5.0] - 2026-11-19
 
 ### Added
