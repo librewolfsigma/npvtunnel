@@ -40,6 +40,10 @@ dirs = "7"
 [target.'cfg(windows)'.dependencies]
 # No linux portal/gtk backends: the GUI ships for Windows only.
 rfd = { version = "0.14", default-features = false }
+# System tray (close-to-tray, quick connect toggle and quit from the tray).
+tray-icon = "0.10"
+# Per-user file association for .npvt / .npvs (HKCU only, no elevation).
+winreg = "0.55"
 
 [build-dependencies]
 winresource = "0.1"

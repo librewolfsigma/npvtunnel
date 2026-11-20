@@ -57,6 +57,14 @@ pub struct Settings {
     pub subscriptions: BTreeMap<String, SubInfo>,
     /// Empty connection groups the user created manually.
     pub extra_groups: Vec<String>,
+    /// Route all traffic through the tunnel TUN interface (admin-gated).
+    pub tun_mode: bool,
+    /// TUN interface address (CIDR) when TUN mode is enabled.
+    pub tun_address: String,
+    /// Block non-tunnel traffic when the tunnel is up (kill switch).
+    pub kill_switch: bool,
+    /// Whether `.npvt` / `.npvs` files are associated with this app.
+    pub file_assoc: bool,
 }
 
 impl Default for Settings {
@@ -79,6 +87,10 @@ impl Default for Settings {
             monthly_down: 0,
             subscriptions: BTreeMap::new(),
             extra_groups: Vec::new(),
+            tun_mode: false,
+            tun_address: npvt_core::engine::DEFAULT_TUN_ADDRESS.to_string(),
+            kill_switch: false,
+            file_assoc: false,
         }
     }
 }
