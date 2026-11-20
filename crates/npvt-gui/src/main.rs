@@ -15,6 +15,7 @@
 mod app;
 mod dialogs;
 mod engine_bridge;
+mod group_card;
 mod icons;
 mod net;
 mod pages;

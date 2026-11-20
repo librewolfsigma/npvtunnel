@@ -4,6 +4,33 @@ All notable changes to npvtunnel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versioning
 follows semver.
 
+## [Unreleased]
+
+### Changed
+
+- `npvt-gui`: `app.rs` (1111 lines) split into the `app/` module
+  (`mod.rs` state + `helpers`/`actions`/`import_actions`/`export_actions`/
+  `misc_actions`/`frames`), `dialogs.rs` (1200 lines) into `dialogs/`
+  (`mod.rs` + `config`/`export`/`manage`/`info`), and the group-card
+  family extracted from `pages.rs` into `group_card.rs`. The decorative
+  `// ---- section ----` separators went away with the split.
+- `npvt-gui`: the locked-container passphrase flow flattened (the
+  unlock-confirm logic now lives in `confirm_passphrase_unlock` /
+  `store_unlocked_profile`), and the 211-line `export_dialog` plus the
+  285-line `draw_group_card` decomposed into per-section helpers.
+- `npvt-cli`: `main.rs` (1144 lines) split into `main.rs` (args +
+  dispatch), `session.rs` (vault/prompts/keygen), `transfer.rs`
+  (import/export), `library.rs` (list/show/remove), `tunnel.rs`
+  (connect/disconnect/status) and `doctor.rs` (the 119-line
+  `cmd_doctor` decomposed into per-area check collectors). No
+  behavior change; exit codes and output text unchanged.
+- `.ai-integrity-ignore`: the `hardcoded-url` finding on
+  `crates/npvt-core/src/profile.rs` is suppressed with a reason - the
+  URL is a unit-test fixture proving URL-shaped servers are rejected.
+- C# docs: XML summaries that merely restated the member name
+  (`AppServices` members, `TunnelState` variants, `MainViewModel`)
+  rewritten to carry real information.
+
 ## [0.5.0] - 2026-11-19
 
 ### Added

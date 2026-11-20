@@ -12,9 +12,9 @@ public enum TunnelState
 {
     /// <summary>No engine running.</summary>
     Disconnected,
-    /// <summary>The engine is starting.</summary>
+    /// <summary>Spawn issued; waiting for the first successful liveness probe.</summary>
     Connecting,
-    /// <summary>The engine is running and the inbound is up.</summary>
+    /// <summary>Liveness probe passed; the local SOCKS inbound accepts traffic.</summary>
     Connected,
 }
 
@@ -31,7 +31,7 @@ public sealed class EngineManager
         _enginePath = enginePath;
     }
 
-    /// <summary>The current session state.</summary>
+    /// <summary>Last state raised on <see cref="StateChanged"/>; external code only reads it.</summary>
     public TunnelState State
     {
         get => _state;

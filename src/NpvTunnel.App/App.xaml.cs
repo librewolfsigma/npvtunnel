@@ -84,7 +84,11 @@ public partial class App : Application
     }
 }
 
-/// <summary>The service bundle handed to pages and handlers.</summary>
+/// <summary>
+/// Shared services built once in <see cref="App.OnStartup"/> and consumed by
+/// pages, event handlers and the view model; every member is initialized
+/// before the first window shows and stays alive for the whole session.
+/// </summary>
 public sealed class AppServices
 {
     /// <summary>Create the bundle.</summary>
@@ -102,18 +106,18 @@ public sealed class AppServices
         Main = main;
     }
 
-    /// <summary>The logger.</summary>
+    /// <summary>File-backed sink for every GUI-side diagnostic line.</summary>
     public LogService Log { get; }
 
     /// <summary>The single-instance guard.</summary>
     public SingleInstance Single { get; }
 
-    /// <summary>The engine installer.</summary>
+    /// <summary>Locates and repairs the bundled engine binary on demand.</summary>
     public EngineInstaller Installer { get; }
 
-    /// <summary>The engine manager.</summary>
+    /// <summary>Owns the engine process: spawn, state transitions, stop.</summary>
     public EngineManager Engine { get; }
 
-    /// <summary>The main view model.</summary>
+    /// <summary>Backs every page; holds the profile library and connect actions.</summary>
     public MainViewModel Main { get; }
 }

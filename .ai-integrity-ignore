@@ -1,0 +1,7 @@
+# master-ci ai-integrity suppressions. Grammar: `check:<id>:<glob>`
+# disables one check on matching paths; every rule carries a reason.
+
+# hardcoded-url: crates/npvt-core/src/profile.rs holds the negative-path
+# unit tests for Profile.Validate; "https://evil.example/u" is a test
+# fixture proving URL-shaped servers are rejected, not a real endpoint.
+check:hardcoded-url:crates/npvt-core/src/profile.rs

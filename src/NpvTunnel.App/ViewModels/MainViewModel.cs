@@ -9,7 +9,10 @@ using NpvTunnel.Core;
 
 namespace NpvTunnel.App.ViewModels;
 
-/// <summary>The main application view model.</summary>
+/// <summary>
+/// Shared state container behind all WPF pages: the profile library,
+/// tunnel session and doctor output; raises <see cref="PropertyChanged"/>.
+/// </summary>
 public sealed partial class MainViewModel : INotifyPropertyChanged
 {
     private readonly LogService _log;
@@ -43,7 +46,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     /// <summary>Doctor summary lines for the More page.</summary>
     public ObservableCollection<string> Doctor { get; } = [];
 
-    /// <summary>The current tunnel state.</summary>
+    /// <summary>Mirrors the engine manager state changes as they are raised.</summary>
     public TunnelState State => _engine.State;
 
     /// <summary>Big status text for the home card.</summary>
