@@ -17,7 +17,7 @@ path = "src/main.rs"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "wrap_help"] }
 clap_complete = "4"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 npvt-core = { path = "../npvt-core" }
 rpassword = "7"
 serde_json.workspace = true
