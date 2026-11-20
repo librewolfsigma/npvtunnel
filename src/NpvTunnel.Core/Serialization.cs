@@ -67,14 +67,25 @@ public sealed class CredentialJsonConverter : JsonConverter<Credential>
     {
         using var doc = JsonDocument.ParseValue(ref reader);
         var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1)
+        if (root.ValueKind != JsonValueKind.Object)
         {
             throw NpvException.InvalidConfig("credential must be a single-key object");
         }
 
-        var (variant, value) = root.EnumerateObject().First() is { } prop
-            ? (prop.Name, prop.Value)
-            : throw NpvException.InvalidConfig("credential object is empty");
+        // One pass: the serde form is exactly one variant key with its
+        // payload as the value.
+        var props = root.EnumerateObject();
+        if (!props.MoveNext())
+        {
+            throw NpvException.InvalidConfig("credential object is empty");
+        }
+
+        var first = props.Current;
+        var (variant, value) = (first.Name, first.Value);
+        if (props.MoveNext())
+        {
+            throw NpvException.InvalidConfig("credential must be a single-key object");
+        }
         return variant switch
         {
             "uuid" => new UuidCredential(CredentialText(value, "uuid")),

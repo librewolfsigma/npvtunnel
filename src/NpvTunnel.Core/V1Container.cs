@@ -16,7 +16,9 @@ public sealed class V1Probe
     /// <summary>The magic identified ("NPVT" or "NPVS" or null).</summary>
     public string? Magic { get; init; }
 
-    /// <summary>The body after the magic looks like plaintext JSON.</summary>
+    /// <summary>Heuristic only, never a security signal: the v1 lock is
+    /// obfuscation rather than encryption, so a plaintext body just means
+    /// the JSON is importable.</summary>
     public bool LooksPlaintextJson { get; init; }
 }
 

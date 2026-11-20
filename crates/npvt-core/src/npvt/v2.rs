@@ -313,7 +313,9 @@ pub struct Verification {
     pub valid: bool,
 }
 
-/// A successfully decoded container.
+/// Payload of a container that passed the magic and unlock checks: the
+/// profile, its signed share policy and whether the creator signature
+/// verified.
 #[derive(Debug, Clone)]
 pub struct Decoded {
     /// The tunnel profile.

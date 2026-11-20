@@ -16,7 +16,8 @@ public sealed class BatchEntry
         Origin = origin;
     }
 
-    /// <summary>The imported profile.</summary>
+    /// <summary>Accepted profile carrying its post-dedup name (the
+    /// dispatcher renames before upsert).</summary>
     public Profile Profile { get; }
 
     /// <summary>Human-facing origin label.</summary>

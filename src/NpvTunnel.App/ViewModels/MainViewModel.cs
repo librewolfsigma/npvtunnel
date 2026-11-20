@@ -34,13 +34,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     /// <summary>Property-change notifications for bindings.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>The loaded vault data.</summary>
+    /// <summary>Vault snapshot behind the profile rows; RefreshProfiles
+    /// reloads it and raises Profiles/Selected rather than this property.</summary>
     public VaultData Data { get; private set; }
 
     /// <summary>Displayed profile rows.</summary>
     public ObservableCollection<ProfileRow> Profiles { get; } = [];
 
-    /// <summary>The selected profile row.</summary>
+    /// <summary>Two-way bound list selection; RefreshProfiles restores it
+    /// by Id across reloads and falls back to the first row.</summary>
     public ProfileRow? Selected { get; set; }
 
     /// <summary>Doctor summary lines for the More page.</summary>
@@ -139,7 +141,8 @@ public sealed class ProfileRow
         Profile = profile;
     }
 
-    /// <summary>The underlying profile.</summary>
+    /// <summary>Snapshot taken when the row was built; a vault reload
+    /// rebuilds whole rows instead of updating this object.</summary>
     public Profile Profile { get; }
 
     /// <summary>Profile id.</summary>

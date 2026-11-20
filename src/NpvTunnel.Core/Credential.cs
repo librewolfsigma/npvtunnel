@@ -46,7 +46,8 @@ public abstract class Credential : IEquatable<Credential>
 /// <summary>UUID-style credential (VLESS/VMess).</summary>
 public sealed class UuidCredential(string value) : Credential
 {
-    /// <summary>The UUID text.</summary>
+    /// <summary>Client UUID; serialized verbatim under the "uuid" key by
+    /// CredentialJsonConverter.</summary>
     public string Value { get; set; } = value;
 
     /// <inheritdoc />
@@ -56,7 +57,8 @@ public sealed class UuidCredential(string value) : Credential
 /// <summary>Password-style credential (Trojan, Hysteria2, SSH).</summary>
 public sealed class PasswordCredential(string value) : Credential
 {
-    /// <summary>The password text.</summary>
+    /// <summary>Password text; serialized verbatim under the "password"
+    /// key by CredentialJsonConverter.</summary>
     public string Value { get; set; } = value;
 
     /// <inheritdoc />
@@ -66,10 +68,12 @@ public sealed class PasswordCredential(string value) : Credential
 /// <summary>Shadowsocks method + password pair.</summary>
 public sealed class SsMethodCredential(string method, string password) : Credential
 {
-    /// <summary>The cipher method.</summary>
+    /// <summary>Cipher method name; import validation caps it at 128
+    /// bytes.</summary>
     public string Method { get; set; } = method;
 
-    /// <summary>The password.</summary>
+    /// <summary>Password half of the pair; validated with the standard
+    /// 512-byte field cap.</summary>
     public string Password { get; set; } = password;
 
     /// <inheritdoc />
@@ -79,7 +83,8 @@ public sealed class SsMethodCredential(string method, string password) : Credent
 /// <summary>Opaque token (SOCKS/HTTP auth, DNSTT key material).</summary>
 public sealed class TokenCredential(string value) : Credential
 {
-    /// <summary>The token text.</summary>
+    /// <summary>Token text; serialized verbatim under the "token" key by
+    /// CredentialJsonConverter.</summary>
     public string Value { get; set; } = value;
 
     /// <inheritdoc />

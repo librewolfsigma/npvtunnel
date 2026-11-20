@@ -18,7 +18,8 @@ public enum ImportSourceKind
     Container,
 }
 
-/// <summary>The result of parsing one import input.</summary>
+/// <summary>Parse result of one import input; exactly one of Profile /
+/// Container is populated, selected by Kind.</summary>
 public sealed class ImportSource
 {
     /// <summary>Which kind of source was parsed.</summary>

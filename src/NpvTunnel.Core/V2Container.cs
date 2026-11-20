@@ -121,7 +121,9 @@ public abstract class V2Unlock
 /// <summary>Signature verification outcome.</summary>
 public sealed record V2Verification(bool Signed, string? Creator, bool Valid);
 
-/// <summary>A successfully decoded container.</summary>
+/// <summary>Payload of a container that passed the magic and unlock
+/// checks: the profile, its signed share policy and whether the creator
+/// signature verified.</summary>
 public sealed class V2Decoded
 {
     /// <summary>The tunnel profile.</summary>

@@ -22,7 +22,8 @@ public sealed class NpvsEntry
     /// <summary>Which line / index the entry came from (1-based; 0 = container).</summary>
     public int Index { get; }
 
-    /// <summary>The imported profile.</summary>
+    /// <summary>Validated profile; NpvsReader guarantees Profile.Validate
+    /// passed before the entry is returned.</summary>
     public Profile Profile { get; }
 
     /// <summary>Human-facing origin label (file name, link, line number).</summary>

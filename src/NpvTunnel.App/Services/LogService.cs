@@ -17,7 +17,8 @@ public enum LogLevel
     Info,
     /// <summary>Something went wrong but the app continues.</summary>
     Warning,
-    /// <summary>An operation failed.</summary>
+    /// <summary>A failed operation; the Error(scope, exception) helper
+    /// writes here with the exception type name prefixed.</summary>
     Error,
 }
 
@@ -42,7 +43,8 @@ public sealed class LogService
     /// <summary>Raised for every written entry (UI subscription).</summary>
     public event Action<string>? EntryWritten;
 
-    /// <summary>The primary log file path.</summary>
+    /// <summary>Primary sink (app.log); rotation renames it to app.log.1
+    /// past 2 MiB and failed primary writes spill to app.fallback.log.</summary>
     public string FilePath => _primaryPath;
 
     /// <summary>Log one entry; never throws.</summary>

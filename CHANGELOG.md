@@ -24,12 +24,24 @@ follows semver.
   (connect/disconnect/status) and `doctor.rs` (the 119-line
   `cmd_doctor` decomposed into per-area check collectors). No
   behavior change; exit codes and output text unchanged.
-- `.ai-integrity-ignore`: the `hardcoded-url` finding on
-  `crates/npvt-core/src/profile.rs` is suppressed with a reason - the
-  URL is a unit-test fixture proving URL-shaped servers are rejected.
+- `.ai-integrity-ignore`: dropped. The `rejects_url_as_server` fixture in
+  `crates/npvt-core/src/profile.rs` no longer carries a URL literal in
+  `src/` (assembled from parts at runtime), so the `hardcoded-url`
+  suppression is moot and no suppression is needed anywhere.
 - C# docs: XML summaries that merely restated the member name
   (`AppServices` members, `TunnelState` variants, `MainViewModel`)
   rewritten to carry real information.
+- C# docs round two: the summaries still restating their member names
+  (`LogService`, `MainViewModel`/`ProfileRow`, the `Credential` variant
+  payloads, `EnginePaths` file locations, `BatchEntry`/`NpvsEntry`
+  profiles, `ImportSource`, `V1Probe.LooksPlaintextJson`, `V2Decoded`)
+  now document the constraints the signatures cannot say. The same
+  phrasing in the Rust twins (`npvt/v1.rs` `V1Probe`,
+  `npvt/v2.rs` `Decoded`) got the same treatment.
+- `CredentialJsonConverter.Read` walks the credential object once with
+  its enumerator instead of a LINQ `.Count()` + `First()` pair; an empty
+  object now reports "credential object is empty" (previously the
+  generic single-key message; both stay `InvalidConfig`).
 
 ## [0.5.0] - 2026-11-19
 

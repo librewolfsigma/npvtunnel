@@ -29,7 +29,9 @@ pub const V1_MAGIC_NPVS: &[u8; 4] = b"NPVS";
 pub struct V1Probe {
     /// Magic matches the v1 family.
     pub is_v1: bool,
-    /// The body after the magic looks like the plaintext JSON config format.
+    /// Heuristic only, never a security signal: the v1 lock is
+    /// obfuscation rather than encryption, so a plaintext body just
+    /// means the JSON is importable.
     pub looks_plaintext_json: bool,
 }
 

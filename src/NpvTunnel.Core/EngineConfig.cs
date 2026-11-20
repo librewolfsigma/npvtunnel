@@ -217,13 +217,17 @@ public static class EnginePaths
         return dir;
     }
 
-    /// <summary>The engine log file path.</summary>
+    /// <summary>engine.log inside the npvtunnel data directory; written
+    /// by the sing-box process itself, not by LogService.</summary>
     public static string LogPath() => System.IO.Path.Combine(WorkDir(), "engine.log");
 
-    /// <summary>The engine pid file path.</summary>
+    /// <summary>engine.pid inside the data directory; written at spawn,
+    /// cleared on stop and used by EngineManager.ReconnectSession after
+    /// an app restart.</summary>
     public static string PidPath() => System.IO.Path.Combine(WorkDir(), "engine.pid");
 
-    /// <summary>The engine config file path for one session.</summary>
+    /// <summary>engine.config.json inside the data directory; rewritten
+    /// before every engine spawn with the one-session profile set.</summary>
     public static string ConfigPath() =>
         System.IO.Path.Combine(WorkDir(), "engine.config.json");
 
