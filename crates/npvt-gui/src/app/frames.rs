@@ -18,21 +18,9 @@ impl eframe::App for App {
         self.poll_events();
         self.persist_traffic_tick();
 
-        // Tray menu clicks and tray icon double-clicks (Windows only).
+        // Tray menu clicks, tray icon clicks and Windows close-to-tray.
         #[cfg(windows)]
-        self.poll_tray(ctx);
-
-        // Window close button: hide to the tray instead of exiting, the
-        // tray menu's Quit is the real exit (Windows; other platforms exit).
-        #[cfg(windows)]
-        {
-            let close = ctx.input(|i| i.viewport().close_requested());
-            if close && !self.quit_requested {
-                self.hidden_to_tray = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            }
-        }
+        self.window_tick(ctx);
 
         // Bottom navigation.
         let mut nav_clicked: Option<usize> = None;

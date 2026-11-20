@@ -1,10 +1,7 @@
-//! Kill switch via Windows Firewall rules.
-//!
-//! When the kill switch is active, all outbound traffic is blocked except
-//! loopback and link-local destinations, so nothing leaks past a dead tunnel.
-//! The rules are added when the engine starts with the kill switch enabled
-//! and removed when the user disconnects. Everything runs through `netsh`,
-//! which needs no elevation for per-user rules on default Windows installs.
+//! Kill switch via Windows Firewall rules: while active, outbound traffic
+//! is blocked except loopback and link-local, so nothing leaks past a dead
+//! tunnel. Rules go up with the engine and come down on disconnect; netsh
+//! needs no elevation for per-user rules on default Windows installs.
 
 #[cfg(windows)]
 use std::process::Command;

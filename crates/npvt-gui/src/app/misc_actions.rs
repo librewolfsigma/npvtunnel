@@ -212,6 +212,21 @@ impl App {
         }
     }
 
+    /// Tray event polling plus the Windows close-to-tray behavior; split
+    /// out of the update loop so `update` stays a page router.
+    #[cfg(windows)]
+    pub(crate) fn window_tick(&mut self, ctx: &egui::Context) {
+        self.poll_tray(ctx);
+        // Window close button: hide to the tray instead of exiting, the
+        // tray menu's Quit is the real exit.
+        let close = ctx.input(|i| i.viewport().close_requested());
+        if close && !self.quit_requested {
+            self.hidden_to_tray = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+    }
+
     /// Drain the tray menu / tray icon event channels (Windows only).
     /// The channels are process-global, so no icon handle is needed here.
     #[cfg(windows)]

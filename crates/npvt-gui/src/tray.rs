@@ -1,9 +1,6 @@
-//! System tray icon (Windows): the app keeps running in the tray when the
-//! window is closed, with a quick connect/disconnect toggle and a real quit
-//! entry. Non-Windows builds have no tray; closing the window exits.
-//!
-//! Implemented with `tray-icon` 0.10: menu clicks arrive on the global
-//! `MenuEvent` channel and icon clicks on `TrayIconEvent::receiver()`, both
+//! System tray icon (Windows): closing the window keeps the app running in
+//! the tray with connect-toggle and quit entries; non-Windows builds exit.
+//! Clicks arrive on the process-global MenuEvent / TrayIconEvent channels,
 //! polled from the eframe update loop (see `App::poll_tray`).
 
 use tray_icon::TrayIcon;

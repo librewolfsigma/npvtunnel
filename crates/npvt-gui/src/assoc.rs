@@ -1,9 +1,6 @@
-//! Per-user file association for `.npvt` / `.npvs` files.
-//!
-//! Writes to `HKCU\Software\Classes` only (no elevation required), so the
-//! association applies to the current user and works for portable installs.
-//! Double-clicking a `.npvt` / `.npvs` file launches `NPVTunnel.exe "%1"`,
-//! and the app opens the import security card for that file.
+//! Per-user file association for `.npvt` / `.npvs` files, written to
+//! `HKCU\Software\Classes` only (no elevation, so portable installs keep
+//! working). A double-clicked container opens the import security card.
 
 use std::path::PathBuf;
 

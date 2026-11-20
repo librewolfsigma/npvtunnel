@@ -212,70 +212,76 @@ fn worker(cmd_rx: Receiver<Cmd>, ev_tx: Sender<Ev>, shared: Arc<Shared>) {
                 let _ = crate::firewall::disable_kill_switch();
                 let _ = ev_tx.send(Ev::Stopped);
             }
-            Cmd::Start(spec) => {
-                // Stop any previous engine first.
-                shared.stop_traffic.store(true, Ordering::Relaxed);
-                shared.stop_watch.store(true, Ordering::Relaxed);
-                if let Some(pid) = running_pid.take() {
+            Cmd::Start(spec) => start_engine(spec, &shared, &ev_tx, &mut running_pid),
+        }
+    }
+}
+
+/// Stop any previous engine, verify the binary and launch the new one.
+fn start_engine(
+    spec: StartSpec,
+    shared: &Arc<Shared>,
+    ev_tx: &Sender<Ev>,
+    running_pid: &mut Option<u32>,
+) {
+    // Stop any previous engine first.
+    shared.stop_traffic.store(true, Ordering::Relaxed);
+    shared.stop_watch.store(true, Ordering::Relaxed);
+    if let Some(pid) = running_pid.take() {
+        let _ = npvt_core::engine::stop(pid);
+        std::thread::sleep(Duration::from_millis(400));
+    }
+    shared.reset_session();
+    shared.set_error(None);
+    shared.set_state(STATE_CONNECTING);
+
+    let bin = npvt_core::engine::find_engine_binary(
+        spec.engine_path.as_deref().map(std::path::Path::new),
+    );
+    let Some(bin) = bin else {
+        shared.set_state(STATE_ERROR);
+        shared.set_error(Some(
+            "sing-box engine not found. Put sing-box.exe next to NPVTunnel.exe, in the npvtunnel data folder under bin\\, or on PATH. Downloads: https://github.com/SagerNet/sing-box/releases"
+                .to_owned(),
+        ));
+        let _ = ev_tx.send(Ev::EngineMissing);
+        return;
+    };
+    // Refuse to launch a swapped-out engine when a pinned checksum was
+    // embedded at build time.
+    if let Err(err) = npvt_core::engine::verify_engine_binary(&bin) {
+        shared.set_state(STATE_ERROR);
+        shared.set_error(Some(err.to_string()));
+        let _ = ev_tx.send(Ev::StartFailed(err.to_string()));
+        return;
+    }
+
+    match launch(&spec, bin) {
+        Ok(pid) => {
+            // The kill switch goes up only after the engine is running and
+            // comes down again on the next Stop; if the engine dies first,
+            // the block deliberately stays until reconnect or explicit stop.
+            if spec.kill_switch {
+                if let Err(err) = crate::firewall::enable_kill_switch() {
                     let _ = npvt_core::engine::stop(pid);
-                    std::thread::sleep(Duration::from_millis(400));
-                }
-                shared.reset_session();
-                shared.set_error(None);
-                shared.set_state(STATE_CONNECTING);
-
-                let bin = npvt_core::engine::find_engine_binary(
-                    spec.engine_path.as_deref().map(std::path::Path::new),
-                );
-                let Some(bin) = bin else {
                     shared.set_state(STATE_ERROR);
-                    shared.set_error(Some(
-                        "sing-box engine not found. Put sing-box.exe next to NPVTunnel.exe, in the npvtunnel data folder under bin\\, or on PATH. Downloads: https://github.com/SagerNet/sing-box/releases"
-                            .to_owned(),
-                    ));
-                    let _ = ev_tx.send(Ev::EngineMissing);
-                    continue;
-                };
-                // Refuse to launch a swapped-out engine when a pinned
-                // checksum was embedded at build time.
-                if let Err(err) = npvt_core::engine::verify_engine_binary(&bin) {
-                    shared.set_state(STATE_ERROR);
-                    shared.set_error(Some(err.to_string()));
-                    let _ = ev_tx.send(Ev::StartFailed(err.to_string()));
-                    continue;
-                }
-
-                match launch(&spec, bin) {
-                    Ok(pid) => {
-                        // The kill switch goes up only after the engine is
-                        // running and comes down again on the next Stop; if
-                        // the engine dies first, the block deliberately stays
-                        // in place until reconnect or explicit stop.
-                        if spec.kill_switch {
-                            if let Err(err) = crate::firewall::enable_kill_switch() {
-                                let _ = npvt_core::engine::stop(pid);
-                                running_pid = None;
-                                shared.set_state(STATE_ERROR);
-                                let err = format!("kill switch failed: {err}");
-                                shared.set_error(Some(err.clone()));
-                                let _ = ev_tx.send(Ev::StartFailed(err));
-                                continue;
-                            }
-                        }
-                        shared.pid.store(pid, Ordering::Relaxed);
-                        running_pid = Some(pid);
-                        shared.stop_watch.store(false, Ordering::Relaxed);
-                        spawn_watcher(shared.clone(), ev_tx.clone(), pid);
-                        spawn_traffic_poller(shared.clone(), ev_tx.clone(), spec.socks_port);
-                        let _ = ev_tx.send(Ev::Started(pid));
-                    }
-                    Err(err) => {
-                        shared.set_state(STATE_ERROR);
-                        shared.set_error(Some(err.clone()));
-                        let _ = ev_tx.send(Ev::StartFailed(err));
-                    }
+                    let err = format!("kill switch failed: {err}");
+                    shared.set_error(Some(err.clone()));
+                    let _ = ev_tx.send(Ev::StartFailed(err));
+                    return;
                 }
             }
+            shared.pid.store(pid, Ordering::Relaxed);
+            *running_pid = Some(pid);
+            shared.stop_watch.store(false, Ordering::Relaxed);
+            spawn_watcher(shared.clone(), ev_tx.clone(), pid);
+            spawn_traffic_poller(shared.clone(), ev_tx.clone(), spec.socks_port);
+            let _ = ev_tx.send(Ev::Started(pid));
+        }
+        Err(err) => {
+            shared.set_state(STATE_ERROR);
+            shared.set_error(Some(err.clone()));
+            let _ = ev_tx.send(Ev::StartFailed(err));
         }
     }
 }
