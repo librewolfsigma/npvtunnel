@@ -8,7 +8,7 @@ use crate::engine_bridge::{self, Ev};
 use crate::net;
 use crate::theme;
 
-use super::App;
+use super::{App, Modal};
 
 impl App {
     pub fn start_asset_download(&mut self, which: usize, name: &str) {
@@ -159,8 +159,9 @@ impl App {
         for ev in self.bridge.drain() {
             self.handle_event(ev);
         }
-        // Fallback: connecting for >6s with a live engine counts as connected.
         if let Some(since) = self.connecting_since {
+            // Fallback: connecting for >6s with a live engine counts as
+            // connected.
             if self.time - since > 6.0
                 && self.bridge.shared().state() == engine_bridge::STATE_CONNECTING
             {
@@ -171,6 +172,83 @@ impl App {
                 self.push_log("INFO", "tunnel assumed established");
             }
         }
+        self.import_pending_file();
+    }
+
+    /// Import a `.npvt` / `.npvs` container the app was launched with
+    /// (double-click in Explorer via the per-user file association).
+    /// Same security card flow as a manual file import.
+    fn import_pending_file(&mut self) {
+        let Some(path) = self.pending_import.take() else {
+            return;
+        };
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let fallback = npvt_core::vault::label_from_filename(&path);
+                match crate::vault_actions::import_file_bytes(&mut self.vault, &bytes, &fallback) {
+                    Ok(name) => {
+                        self.persist_vault();
+                        self.push_log(
+                            "INFO",
+                            &format!("imported launched file '{}' as '{name}'", path.display()),
+                        );
+                        self.toast_now(format!("Imported {name}"));
+                    }
+                    Err(crate::vault_actions::FileImportError::NeedsUnlock(msg)) => {
+                        self.push_log("INFO", &msg);
+                        self.ms.pending_locked = Some(bytes);
+                        self.ms.pass_entry.clear();
+                        self.ms.pass_err = None;
+                        self.open_modal(Modal::Passphrase);
+                    }
+                    Err(crate::vault_actions::FileImportError::Other(e)) => {
+                        self.toast_now(format!("Import failed: {e}"));
+                    }
+                }
+            }
+            Err(err) => {
+                self.toast_now(format!("Cannot read '{}': {err}", path.display()));
+            }
+        }
+    }
+
+    /// Drain the tray menu / tray icon event channels (Windows only).
+    /// The channels are process-global, so no icon handle is needed here.
+    #[cfg(windows)]
+    pub(crate) fn poll_tray(&mut self, ctx: &egui::Context) {
+        use crate::tray;
+        use tray_icon::menu::MenuEvent;
+        use tray_icon::{ClickType, TrayIconEvent};
+
+        while let Ok(ev) = MenuEvent::receiver().try_recv() {
+            match ev.id.0.as_str() {
+                tray::MENU_SHOW => self.show_window(ctx),
+                tray::MENU_TOGGLE => self.toggle_connection(),
+                tray::MENU_QUIT => self.quit_from_tray(),
+                _ => {}
+            }
+        }
+        while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
+            if matches!(ev.click_type, ClickType::Left | ClickType::Double) {
+                self.show_window(ctx);
+            }
+        }
+    }
+
+    /// Bring the main window back from the tray.
+    #[cfg(windows)]
+    pub(crate) fn show_window(&mut self, ctx: &egui::Context) {
+        self.hidden_to_tray = false;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focused);
+    }
+
+    /// Quit from the tray: disconnect (also lifts the kill switch rules)
+    /// and close the window for real.
+    #[cfg(windows)]
+    fn quit_from_tray(&mut self) {
+        self.disconnect();
+        self.quit_requested = true;
     }
 
     pub(crate) fn persist_traffic_tick(&mut self) {

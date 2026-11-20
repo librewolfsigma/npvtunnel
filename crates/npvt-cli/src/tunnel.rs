@@ -38,6 +38,9 @@ pub(crate) fn cmd_connect(
         socks_port,
         dns,
         None,
+        false,
+        None,
+        &[],
     )?;
     let cfg_path = workdir.join("engine.json");
     engine::write_config(&cfg, &cfg_path)?;

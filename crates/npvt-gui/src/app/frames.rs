@@ -18,6 +18,22 @@ impl eframe::App for App {
         self.poll_events();
         self.persist_traffic_tick();
 
+        // Tray menu clicks and tray icon double-clicks (Windows only).
+        #[cfg(windows)]
+        self.poll_tray(ctx);
+
+        // Window close button: hide to the tray instead of exiting, the
+        // tray menu's Quit is the real exit (Windows; other platforms exit).
+        #[cfg(windows)]
+        {
+            let close = ctx.input(|i| i.viewport().close_requested());
+            if close && !self.quit_requested {
+                self.hidden_to_tray = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+        }
+
         // Bottom navigation.
         let mut nav_clicked: Option<usize> = None;
         egui::TopBottomPanel::bottom("nav")
@@ -65,6 +81,12 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
         } else if self.toast.is_some() || modal_open {
             ctx.request_repaint_after(std::time::Duration::from_millis(120));
+        }
+        // While hidden to the tray the window gets no input events; wake up
+        // periodically so tray menu commands still arrive.
+        #[cfg(windows)]
+        if self.hidden_to_tray {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
     }
 }

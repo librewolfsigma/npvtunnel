@@ -7,9 +7,11 @@
 
 use std::path::PathBuf;
 
-/// ProgId used for the file association.
+/// ProgId used for the file association (Windows registry only).
+#[cfg(windows)]
 const PROG_ID: &str = "npvtunnel.config";
 /// Friendly name shown in Explorer's "Type" column.
+#[cfg(windows)]
 const FILE_TYPE_NAME: &str = "NPVTunnel Config";
 /// Extensions we associate.
 const EXTENSIONS: &[&str] = &[".npvt", ".npvs"];
@@ -93,14 +95,9 @@ pub fn associate() -> Result<(), String> {
             .map_err(|e| format!("could not set extension '{ext}': {e}"))?;
     }
 
-    unsafe {
-        let _ = windows_sys::Win32::UI::Shell::SHChangeNotify(
-            0x8000000, // SHCNE_ASSOCCHANGED
-            0x1000,    // SHCNF_IDLIST
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
-    }
+    // Windows Explorer picks up HKCU\Software\Classes changes on its own;
+    // the explicit SHChangeNotify refresh would need an unsafe FFI call and
+    // the crate forbids unsafe code, so no shell notification is sent here.
 
     Ok(())
 }
@@ -111,15 +108,21 @@ pub fn associate() -> Result<(), String> {
 }
 
 /// Return the path a double-clicked file should be imported from, if the app
-/// was launched with one. Called from `main()` before the UI starts.
+/// was launched with one. Called before the UI starts.
 pub fn pending_file_from_args() -> Option<PathBuf> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        return None;
-    }
-    let path = PathBuf::from(&args[1]);
+    pending_file_from(std::env::args())
+}
+
+/// Argument-list variant of [`pending_file_from_args`], split out so tests
+/// can pass arguments without touching process-global state.
+pub fn pending_file_from<I: IntoIterator<Item = String>>(args: I) -> Option<PathBuf> {
+    let mut iter = args.into_iter();
+    let _program = iter.next()?;
+    let path = PathBuf::from(iter.next()?);
+    // `Path::extension` yields the suffix without the leading dot, so the
+    // comparison normalizes it back to the registry-key form `.npvt`.
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    if EXTENSIONS.contains(&ext) && path.is_file() {
+    if EXTENSIONS.contains(&format!(".{ext}").as_str()) && path.is_file() {
         return Some(path);
     }
     None
@@ -129,19 +132,52 @@ pub fn pending_file_from_args() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn extensions_are_non_empty() {
-        assert!(!EXTENSIONS.is_empty());
+    /// Create a uniquely named file, run `body` with its path, delete it.
+    fn with_temp_file(body: impl FnOnce(&std::path::Path)) {
+        let path = std::env::temp_dir().join(format!(
+            "npvt-assoc-test-{}-{}.npvt",
+            std::process::id(),
+            npvt_core::profile::unix_now()
+        ));
+        std::fs::write(&path, b"test").expect("write temp file");
+        body(&path);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
-    fn prog_id_is_non_empty() {
-        assert!(!PROG_ID.is_empty());
+    fn no_args_yields_no_pending_file() {
+        assert_eq!(pending_file_from(["npvtunnel.exe".to_owned()]), None);
+        assert_eq!(pending_file_from(std::iter::empty()), None);
     }
 
     #[test]
-    fn pending_file_from_args_ignores_non_npvt() {
-        // Cannot easily set args in a unit test; just verify the function exists.
-        let _ = EXTENSIONS.len();
+    fn double_clicked_container_is_pending() {
+        with_temp_file(|path| {
+            let arg = path.to_string_lossy().to_string();
+            assert_eq!(
+                pending_file_from(["npvtunnel.exe".to_owned(), arg]),
+                Some(path.to_path_buf())
+            );
+        });
+    }
+
+    #[test]
+    fn non_container_arguments_are_ignored() {
+        with_temp_file(|path| {
+            let wrong_ext = path.with_extension("txt");
+            std::fs::write(&wrong_ext, b"test").expect("write temp file");
+            let arg = wrong_ext.to_string_lossy().to_string();
+            assert_eq!(pending_file_from(["npvtunnel.exe".to_owned(), arg]), None);
+            let _ = std::fs::remove_file(&wrong_ext);
+        });
+    }
+
+    #[test]
+    fn missing_files_are_not_imported() {
+        let arg = std::env::temp_dir().join("npvt-assoc-does-not-exist.npvt");
+        assert_eq!(
+            pending_file_from(["npvtunnel.exe".to_owned(), arg.to_string_lossy().to_string()]),
+            None
+        );
     }
 }

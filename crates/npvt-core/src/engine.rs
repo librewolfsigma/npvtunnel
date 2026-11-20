@@ -27,7 +27,6 @@ use crate::profile::{Credential, Profile, Protocol, Transport};
 /// hashed and compared to this value; a mismatch aborts startup.
 ///
 /// If unset (empty), verification is skipped.
-#[allow(dead_code)]
 pub const EXPECTED_ENGINE_SHA256: Option<&'static str> = option_env!("NPVT_ENGINE_SHA256");
 
 /// Default local SOCKS inbound port.
@@ -224,6 +223,10 @@ pub fn outbound(p: &Profile) -> Result<Value> {
 /// When `tun_mode` is true, a TUN inbound is added and the route final points
 /// to it instead of a profile outbound. When `route_rules` is non-empty,
 /// per-process routing rules are added to the route block.
+// The argument count mirrors the knobs of the rendered sing-box document;
+// packing them into a struct would only relocate the width without making
+// the call sites clearer.
+#[allow(clippy::too_many_arguments)]
 pub fn config(
     profiles: &[Profile],
     active_id: &str,
@@ -405,8 +408,11 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         .map_err(|e| Error::Engine(format!("cannot read '{}': {e}", path.display())))?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    let result = hasher.finalize();
-    Ok(format!("{result:x}"))
+    let digest = hasher.finalize();
+    let digest: &[u8] = digest.as_ref();
+    // sha2 0.11's output array no longer implements LowerHex, so hex-encode
+    // the bytes explicitly.
+    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// Verify the authenticity of the sing-box binary against the embedded
@@ -425,14 +431,6 @@ pub fn verify_engine_binary(bin: &Path) -> Result<()> {
             "sing-box authenticity check failed: expected {expected}, got {actual}"
         )));
     }
-    Ok(())
-}
-
-/// On Windows, set the file's DACL to owner-only. Best-effort: not yet
-/// implemented because `#![forbid(unsafe_code)]` blocks the required Windows
-/// API calls. Tracked as a post-v1.0 hardening item (SECURITY.md).
-#[cfg(windows)]
-pub fn set_owner_only(_path: &Path) -> Result<()> {
     Ok(())
 }
 

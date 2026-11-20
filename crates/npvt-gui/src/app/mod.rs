@@ -88,6 +88,15 @@ pub struct ModalState {
     pub set_loglevel: usize,
     pub per_app_text: String,
     pub per_app_mode: PerAppMode,
+    /// TUN mode checkbox in the settings dialog (applied on Save).
+    pub set_tun: bool,
+    /// TUN interface address (CIDR) text field in the settings dialog.
+    pub set_tun_addr: String,
+    /// Kill switch checkbox in the settings dialog (applied on Save).
+    pub set_kill: bool,
+    /// File-association checkbox in the settings dialog (applied on Save:
+    /// writes the HKCU association when newly enabled).
+    pub set_assoc: bool,
 }
 
 pub struct App {
@@ -120,6 +129,15 @@ pub struct App {
     /// Watermark of the lifetime downlink counter for monthly accounting.
     pub persisted_lifetime_down: u64,
     pub last_persist: f64,
+    /// `.npvt` / `.npvs` file passed on the command line (double-click
+    /// launch), waiting to be imported once the UI is up.
+    pub pending_import: Option<std::path::PathBuf>,
+    /// Whether the window is currently hidden to the system tray (Windows).
+    #[cfg(windows)]
+    pub hidden_to_tray: bool,
+    /// System tray icon handle; keeping it alive keeps the icon visible.
+    #[cfg(windows)]
+    pub tray: Option<tray_icon::TrayIcon>,
 }
 
 impl App {
@@ -134,6 +152,10 @@ impl App {
 
         let bridge = Bridge::new();
         let ev_tx = bridge.event_sender();
+        // System tray (Windows only): closed windows keep running in the
+        // tray until the menu's Quit entry is used.
+        #[cfg(windows)]
+        let tray = crate::tray::create();
         let mut app = App {
             palette: theme::resolve(settings.theme),
             settings,
@@ -162,6 +184,11 @@ impl App {
             asset_status: String::new(),
             persisted_lifetime_down: 0,
             last_persist: 0.0,
+            pending_import: crate::assoc::pending_file_from_args(),
+            #[cfg(windows)]
+            hidden_to_tray: false,
+            #[cfg(windows)]
+            tray,
         };
         app.push_log("INFO", "NPVTunnel started");
         // Dev/test harness: pick a start page or open a modal without

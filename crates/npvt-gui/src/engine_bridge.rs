@@ -94,6 +94,12 @@ pub struct StartSpec {
     pub per_app_mode: crate::settings::PerAppMode,
     pub per_app: Vec<String>,
     pub engine_path: Option<String>,
+    /// Capture all system traffic through a TUN inbound (admin-gated).
+    pub tun_mode: bool,
+    /// TUN interface address (CIDR); `None` uses the engine default.
+    pub tun_address: Option<String>,
+    /// Block non-tunnel outbound traffic while the engine runs.
+    pub kill_switch: bool,
 }
 
 /// Events flowing back to the UI.
@@ -201,6 +207,9 @@ fn worker(cmd_rx: Receiver<Cmd>, ev_tx: Sender<Ev>, shared: Arc<Shared>) {
                 shared.set_state(STATE_DISCONNECTED);
                 shared.reset_session();
                 shared.set_error(None);
+                // Best-effort: lift the firewall block if the last connect
+                // raised it.
+                let _ = crate::firewall::disable_kill_switch();
                 let _ = ev_tx.send(Ev::Stopped);
             }
             Cmd::Start(spec) => {
@@ -227,9 +236,32 @@ fn worker(cmd_rx: Receiver<Cmd>, ev_tx: Sender<Ev>, shared: Arc<Shared>) {
                     let _ = ev_tx.send(Ev::EngineMissing);
                     continue;
                 };
+                // Refuse to launch a swapped-out engine when a pinned
+                // checksum was embedded at build time.
+                if let Err(err) = npvt_core::engine::verify_engine_binary(&bin) {
+                    shared.set_state(STATE_ERROR);
+                    shared.set_error(Some(err.to_string()));
+                    let _ = ev_tx.send(Ev::StartFailed(err.to_string()));
+                    continue;
+                }
 
                 match launch(&spec, bin) {
                     Ok(pid) => {
+                        // The kill switch goes up only after the engine is
+                        // running and comes down again on the next Stop; if
+                        // the engine dies first, the block deliberately stays
+                        // in place until reconnect or explicit stop.
+                        if spec.kill_switch {
+                            if let Err(err) = crate::firewall::enable_kill_switch() {
+                                let _ = npvt_core::engine::stop(pid);
+                                running_pid = None;
+                                shared.set_state(STATE_ERROR);
+                                let err = format!("kill switch failed: {err}");
+                                shared.set_error(Some(err.clone()));
+                                let _ = ev_tx.send(Ev::StartFailed(err));
+                                continue;
+                            }
+                        }
                         shared.pid.store(pid, Ordering::Relaxed);
                         running_pid = Some(pid);
                         shared.stop_watch.store(false, Ordering::Relaxed);
@@ -256,6 +288,9 @@ fn launch(spec: &StartSpec, bin: std::path::PathBuf) -> Result<u32, String> {
         spec.socks_port,
         &spec.dns_server,
         Some(spec.clash_port),
+        spec.tun_mode,
+        spec.tun_address.as_deref(),
+        &[],
     )
     .map_err(|e| format!("config render failed: {e}"))?;
     let mut cfg = cfg;
@@ -467,19 +502,26 @@ mod tests {
         assert_eq!(fmt_rate(1024 * 1024), "1.0 MB/s");
     }
 
-    #[test]
-    fn inject_extras_sets_log_level() {
-        let spec = StartSpec {
+    fn test_spec(mode: crate::settings::PerAppMode, per_app: Vec<String>) -> StartSpec {
+        StartSpec {
             members: vec![],
             active_id: "abc".into(),
             socks_port: 2080,
             clash_port: 19090,
             dns_server: "8.8.8.8".into(),
             log_level: "info".into(),
-            per_app_mode: crate::settings::PerAppMode::Off,
-            per_app: vec![],
+            per_app_mode: mode,
+            per_app,
             engine_path: None,
-        };
+            tun_mode: false,
+            tun_address: None,
+            kill_switch: false,
+        }
+    }
+
+    #[test]
+    fn inject_extras_sets_log_level() {
+        let spec = test_spec(crate::settings::PerAppMode::Off, vec![]);
         let mut cfg = serde_json::json!({
             "log": {"level": "warn"},
             "route": {"final": "abc"}
@@ -491,17 +533,10 @@ mod tests {
 
     #[test]
     fn inject_extras_block_mode() {
-        let spec = StartSpec {
-            members: vec![],
-            active_id: "abc".into(),
-            socks_port: 2080,
-            clash_port: 19090,
-            dns_server: "8.8.8.8".into(),
-            log_level: "warn".into(),
-            per_app_mode: crate::settings::PerAppMode::Block,
-            per_app: vec!["steam.exe".into()],
-            engine_path: None,
-        };
+        let spec = test_spec(
+            crate::settings::PerAppMode::Block,
+            vec!["steam.exe".into()],
+        );
         let mut cfg = serde_json::json!({"route": {"final": "abc"}});
         inject_extras(&mut cfg, &spec);
         assert_eq!(

@@ -47,6 +47,12 @@ impl App {
             per_app_mode: self.settings.per_app_mode,
             per_app: self.settings.per_app.clone(),
             engine_path: self.settings.engine_path.clone(),
+            tun_mode: self.settings.tun_mode,
+            tun_address: self
+                .settings
+                .tun_mode
+                .then(|| self.settings.tun_address.clone()),
+            kill_switch: self.settings.kill_switch,
         };
         self.bridge.send(Cmd::Start(spec));
         self.push_log("INFO", &format!("connecting to '{label}'..."));
@@ -241,9 +247,74 @@ impl App {
         self.settings.connect_on_launch = self.ms.set_launch;
         self.settings.log_level =
             ["warn", "info", "error", "debug"][self.ms.set_loglevel].to_owned();
+        // TUN address validation: an invalid CIDR would render a config the
+        // engine rejects at start, so catch it here where the user sees it.
+        let tun_addr = self.ms.set_tun_addr.trim().to_owned();
+        if let Err(msg) = validate_tun_address(&tun_addr) {
+            self.toast_now(format!("TUN address: {msg}"));
+            return;
+        }
+        self.settings.tun_mode = self.ms.set_tun;
+        self.settings.tun_address = tun_addr;
+        self.settings.kill_switch = self.ms.set_kill;
+        // File association is applied immediately on Save: newly enabled
+        // writes the per-user registry keys (skipped when the extensions
+        // already point at this install), failures keep the old value.
+        if self.ms.set_assoc && !self.settings.file_assoc && !crate::assoc::is_associated() {
+            match crate::assoc::associate() {
+                Ok(()) => {
+                    self.settings.file_assoc = true;
+                    self.push_log("INFO", ".npvt / .npvs files associated with NPVTunnel");
+                }
+                Err(e) => {
+                    self.toast_now(format!("Association failed: {e}"));
+                }
+            }
+        }
         self.settings.save();
         self.push_log("INFO", "settings saved");
         self.toast_now("Settings saved");
         self.close_modal();
+    }
+}
+
+/// Check a TUN interface address in CIDR form (`a.b.c.d/prefix`).
+fn validate_tun_address(value: &str) -> Result<(), String> {
+    let (addr, prefix) = value
+        .split_once('/')
+        .ok_or_else(|| "expected IPv4 CIDR like 10.255.0.1/24".to_string())?;
+    let octets: Vec<u8> = addr
+        .split('.')
+        .map(|o| o.parse::<u8>())
+        .collect::<Result<_, _>>()
+        .map_err(|_| "address must be four dot-separated numbers 0-255".to_string())?;
+    if octets.len() != 4 {
+        return Err("address must have exactly four octets".to_string());
+    }
+    let prefix: u8 = prefix
+        .parse()
+        .map_err(|_| "prefix must be 0-32".to_string())?;
+    if prefix > 32 {
+        return Err("prefix must be 0-32".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_tun_address;
+
+    #[test]
+    fn valid_cidr_addresses_pass() {
+        assert_eq!(validate_tun_address("10.255.0.1/24"), Ok(()));
+        assert_eq!(validate_tun_address("192.168.1.1/16"), Ok(()));
+    }
+
+    #[test]
+    fn malformed_cidr_addresses_fail() {
+        assert!(validate_tun_address("10.255.0.1").is_err());
+        assert!(validate_tun_address("10.255.0.1/33").is_err());
+        assert!(validate_tun_address("999.0.0.1/24").is_err());
+        assert!(validate_tun_address("10.255.0.1.5/24").is_err());
     }
 }

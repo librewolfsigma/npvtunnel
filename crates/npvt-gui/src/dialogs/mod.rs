@@ -181,6 +181,10 @@ impl ModalState {
             set_loglevel: 0,
             per_app_text: String::new(),
             per_app_mode: crate::settings::PerAppMode::Off,
+            set_tun: false,
+            set_tun_addr: npvt_core::engine::DEFAULT_TUN_ADDRESS.to_string(),
+            set_kill: false,
+            set_assoc: false,
         }
     }
 }

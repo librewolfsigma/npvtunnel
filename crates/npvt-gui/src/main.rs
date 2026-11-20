@@ -13,14 +13,19 @@
 #![allow(float_literal_f32_fallback)]
 
 mod app;
+mod assoc;
 mod dialogs;
 mod engine_bridge;
+mod firewall;
 mod group_card;
 mod icons;
 mod net;
 mod pages;
 mod settings;
 mod theme;
+// The tray depends on the Windows-only tray-icon crate.
+#[cfg(windows)]
+mod tray;
 mod vault_actions;
 mod widgets;
 

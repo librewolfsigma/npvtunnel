@@ -140,6 +140,49 @@ impl App {
         ui.add_space(6.0);
         ui.checkbox(&mut ms.set_autostart, "Start with Windows");
         ui.checkbox(&mut ms.set_launch, "Connect on launch");
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(6.0);
+        ui.checkbox(&mut ms.set_tun, "TUN mode (route all system traffic)");
+        if ms.set_tun {
+            ui.label(
+                egui::RichText::new(
+                    "Captures all traffic through a virtual network adapter. \
+                     Requires administrator privileges.",
+                )
+                .font(theme::body())
+                .color(p.text_faint),
+            );
+            field_label(ui, p, "TUN address (IPv4 CIDR)");
+            ui.add(
+                egui::TextEdit::singleline(&mut ms.set_tun_addr)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(180.0),
+            );
+        }
+        ui.checkbox(&mut ms.set_kill, "Kill switch (block traffic while disconnected)");
+        if ms.set_kill {
+            ui.label(
+                egui::RichText::new(
+                    "While the engine runs, everything but loopback and link-local \
+                     outbound is blocked. If the engine dies, the block stays until \
+                     you reconnect or disconnect.",
+                )
+                .font(theme::body())
+                .color(p.text_faint),
+            );
+        }
+        ui.checkbox(&mut ms.set_assoc, "Open .npvt / .npvs files with NPVTunnel");
+        if ms.set_assoc {
+            ui.label(
+                egui::RichText::new(
+                    "Per-user association (HKCU only, no admin needed). Double-clicking \
+                     a container imports it into your library - it never connects silently.",
+                )
+                .font(theme::body())
+                .color(p.text_faint),
+            );
+        }
         ui.add_space(12.0);
         match footer(ui, p, false, "Save settings") {
             Action::Confirm => {

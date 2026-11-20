@@ -51,6 +51,10 @@ impl App {
                     .iter()
                     .position(|l| *l == self.settings.log_level)
                     .unwrap_or(0);
+                self.ms.set_tun = self.settings.tun_mode;
+                self.ms.set_tun_addr = self.settings.tun_address.clone();
+                self.ms.set_kill = self.settings.kill_switch;
+                self.ms.set_assoc = self.settings.file_assoc;
             }
             Modal::PerApp => {
                 self.ms.per_app_mode = self.settings.per_app_mode;
