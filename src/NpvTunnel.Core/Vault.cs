@@ -59,7 +59,8 @@ public sealed class Vault
         _path = path;
     }
 
-    /// <summary>The vault file path.</summary>
+    /// <summary>Location given at construction (tests, --vault); the
+    /// default lives in <see cref="DefaultPath"/>.</summary>
     public string Path => _path;
 
     /// <summary>Default vault path for the current user.</summary>

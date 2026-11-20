@@ -118,7 +118,8 @@ public abstract class V2Unlock
     public IReadOnlyList<byte[]>? AsKeys() => this is UnlockKeys k ? k.Secrets : null;
 }
 
-/// <summary>Signature verification outcome.</summary>
+/// <summary>Outcome of the creator-signature check on a v2 container;
+/// Valid is true only when a signature was present and verified.</summary>
 public sealed record V2Verification(bool Signed, string? Creator, bool Valid);
 
 /// <summary>Payload of a container that passed the magic and unlock
@@ -126,12 +127,16 @@ public sealed record V2Verification(bool Signed, string? Creator, bool Valid);
 /// signature verified.</summary>
 public sealed class V2Decoded
 {
-    /// <summary>The tunnel profile.</summary>
+    /// <summary>Validated before decode returns: ParsePayload fails
+    /// closed on an invalid profile.</summary>
     public required Profile Profile { get; init; }
 
-    /// <summary>The signed share policy.</summary>
+    /// <summary>Carried in the header, which is bound to the ciphertext
+    /// as AAD - the policy cannot be swapped without failing decryption.</summary>
     public required V2Policy Policy { get; init; }
 
-    /// <summary>Signature verification outcome.</summary>
+    /// <summary>Unsigned containers report Signed=false with Creator=null
+    /// and Valid=false; a present but invalid signature aborts the decode
+    /// (fails closed), so Valid=false only means unsigned.</summary>
     public required V2Verification Verification { get; init; }
 }

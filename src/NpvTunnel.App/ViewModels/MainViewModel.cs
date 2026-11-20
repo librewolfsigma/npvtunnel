@@ -145,15 +145,18 @@ public sealed class ProfileRow
     /// rebuilds whole rows instead of updating this object.</summary>
     public Profile Profile { get; }
 
-    /// <summary>Profile id.</summary>
+    /// <summary>Vault id; also the key RefreshProfiles uses to restore
+    /// the selection across reloads.</summary>
     public string Id => Profile.Id;
 
-    /// <summary>Display name.</summary>
+    /// <summary>Unique display name; the import dispatcher dedups with a
+    /// random suffix on collision.</summary>
     public string Name => Profile.Name;
 
-    /// <summary>Protocol name.</summary>
+    /// <summary>Lowercase serde family name (matches the Rust naming).</summary>
     public string Protocol => Profile.Protocol.AsStr();
 
-    /// <summary>Endpoint text.</summary>
+    /// <summary>host:port rendered from the profile; the server is a bare
+    /// host or IP, never a URL.</summary>
     public string Endpoint => $"{Profile.Server}:{Profile.Port}";
 }

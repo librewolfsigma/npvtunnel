@@ -109,7 +109,8 @@ public sealed class AppServices
     /// <summary>File-backed sink for every GUI-side diagnostic line.</summary>
     public LogService Log { get; }
 
-    /// <summary>The single-instance guard.</summary>
+    /// <summary>Named-mutex guard keeping one app instance; the slot is
+    /// released on exit.</summary>
     public SingleInstance Single { get; }
 
     /// <summary>Locates and repairs the bundled engine binary on demand.</summary>

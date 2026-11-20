@@ -101,7 +101,8 @@ public sealed class Profile : IEquatable<Profile>
     [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;
 
-    /// <summary>Display name.</summary>
+    /// <summary>Bounded to 128 bytes; the import dispatcher dedups
+    /// collisions with a random suffix.</summary>
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 

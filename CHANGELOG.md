@@ -42,6 +42,12 @@ follows semver.
   its enumerator instead of a LINQ `.Count()` + `First()` pair; an empty
   object now reports "credential object is empty" (previously the
   generic single-key message; both stay `InvalidConfig`).
+- C# docs round three: `V2Decoded.Profile/Policy/Verification`,
+  `Vault.Path`, the `ProfileRow` accessors, `AppServices.Single` and
+  `AuditFinding.ProfileId` now document the invariants their names
+  cannot say (fail-closed validation, AAD-bound policy, the
+  Valid-only-means-unsigned contract, selection restore, name dedup,
+  the named-mutex slot, one finding per check).
 
 ## [0.5.0] - 2026-11-19
 

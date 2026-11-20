@@ -17,7 +17,8 @@ public enum AuditSeverity
 /// <summary>One audit finding.</summary>
 public sealed class AuditFinding
 {
-    /// <summary>Profile under audit.</summary>
+    /// <summary>Vault id of the audited profile; one profile can carry
+    /// several findings, one per check.</summary>
     public string ProfileId { get; init; } = string.Empty;
 
     /// <summary>Severity bucket.</summary>
