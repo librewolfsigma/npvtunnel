@@ -2297,7 +2297,7 @@ checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "npvt-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "clap",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "npvt-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "argon2",
  "base64",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "npvt-gui"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "base64",
