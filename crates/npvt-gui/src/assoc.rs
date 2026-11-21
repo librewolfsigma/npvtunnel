@@ -173,7 +173,10 @@ mod tests {
     fn missing_files_are_not_imported() {
         let arg = std::env::temp_dir().join("npvt-assoc-does-not-exist.npvt");
         assert_eq!(
-            pending_file_from(["npvtunnel.exe".to_owned(), arg.to_string_lossy().to_string()]),
+            pending_file_from([
+                "npvtunnel.exe".to_owned(),
+                arg.to_string_lossy().to_string()
+            ]),
             None
         );
     }

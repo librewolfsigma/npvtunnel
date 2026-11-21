@@ -255,7 +255,7 @@ impl App {
     pub(crate) fn show_window(&mut self, ctx: &egui::Context) {
         self.hidden_to_tray = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focused);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 
     /// Quit from the tray: disconnect (also lifts the kill switch rules)

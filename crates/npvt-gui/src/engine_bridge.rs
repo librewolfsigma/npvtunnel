@@ -539,10 +539,7 @@ mod tests {
 
     #[test]
     fn inject_extras_block_mode() {
-        let spec = test_spec(
-            crate::settings::PerAppMode::Block,
-            vec!["steam.exe".into()],
-        );
+        let spec = test_spec(crate::settings::PerAppMode::Block, vec!["steam.exe".into()]);
         let mut cfg = serde_json::json!({"route": {"final": "abc"}});
         inject_extras(&mut cfg, &spec);
         assert_eq!(

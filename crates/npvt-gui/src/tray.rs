@@ -27,12 +27,7 @@ pub fn create() -> Option<TrayIcon> {
 
     let menu = Menu::new();
     if menu
-        .append(&MenuItem::with_id(
-            MENU_SHOW,
-            "Show NPVTunnel",
-            true,
-            None::<tray_icon::menu::Accelerator>,
-        ))
+        .append(&MenuItem::with_id(MENU_SHOW, "Show NPVTunnel", true, None))
         .is_err()
     {
         return None;
@@ -42,25 +37,17 @@ pub fn create() -> Option<TrayIcon> {
             MENU_TOGGLE,
             "Connect / Disconnect",
             true,
-            None::<tray_icon::menu::Accelerator>,
+            None,
         ))
         .is_err()
     {
         return None;
     }
-    if menu
-        .append(&PredefinedMenuItem::separator())
-        .is_err()
-    {
+    if menu.append(&PredefinedMenuItem::separator()).is_err() {
         return None;
     }
     if menu
-        .append(&MenuItem::with_id(
-            MENU_QUIT,
-            "Quit NPVTunnel",
-            true,
-            None::<tray_icon::menu::Accelerator>,
-        ))
+        .append(&MenuItem::with_id(MENU_QUIT, "Quit NPVTunnel", true, None))
         .is_err()
     {
         return None;
@@ -86,5 +73,6 @@ pub fn create() -> Option<TrayIcon> {
 fn tray_image() -> Option<tray_icon::Icon> {
     let img = image::load_from_memory(include_bytes!("../assets/icon.png")).ok()?;
     let rgba = img.to_rgba8();
-    tray_icon::Icon::from_rgba(rgba.into_raw(), rgba.width(), rgba.height()).ok()
+    let (width, height) = (rgba.width(), rgba.height());
+    tray_icon::Icon::from_rgba(rgba.into_raw(), width, height).ok()
 }

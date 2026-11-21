@@ -19,7 +19,7 @@ fn protection_toggles(ui: &mut egui::Ui, p: &crate::theme::Palette, ms: &mut Mod
         ui.label(
             egui::RichText::new(
                 "Captures all traffic through a virtual network adapter. \
-                 Requires administrator privileges.",
+                Requires administrator privileges.",
             )
             .font(theme::body())
             .color(p.text_faint),
@@ -31,13 +31,16 @@ fn protection_toggles(ui: &mut egui::Ui, p: &crate::theme::Palette, ms: &mut Mod
                 .desired_width(180.0),
         );
     }
-    ui.checkbox(&mut ms.set_kill, "Kill switch (block traffic while disconnected)");
+    ui.checkbox(
+        &mut ms.set_kill,
+        "Kill switch (block traffic while disconnected)",
+    );
     if ms.set_kill {
         ui.label(
             egui::RichText::new(
                 "While the engine runs, everything but loopback and link-local \
-                 outbound is blocked. If the engine dies, the block stays until \
-                 you reconnect or disconnect.",
+                outbound is blocked. If the engine dies, the block stays until \
+                you reconnect or disconnect.",
             )
             .font(theme::body())
             .color(p.text_faint),
@@ -48,7 +51,7 @@ fn protection_toggles(ui: &mut egui::Ui, p: &crate::theme::Palette, ms: &mut Mod
         ui.label(
             egui::RichText::new(
                 "Per-user association (HKCU only, no admin needed). Double-clicking \
-                 a container imports it into your library - it never connects silently.",
+                a container imports it into your library - it never connects silently.",
             )
             .font(theme::body())
             .color(p.text_faint),
