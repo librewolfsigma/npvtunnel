@@ -8,6 +8,13 @@ ignore = [
     # ttf-parser is unmaintained (superseded by skrifa); egui pulls it only
     # for rendering its embedded default fonts. No vulnerability is known.
     "RUSTSEC-2026-0192",
+    # proc-macro-error is unmaintained upstream (no releases in 4 years).
+    # It enters the graph only through glib-macros 0.18 in tray-icon's
+    # Linux GTK backend; shipped Windows builds do not compile it. An
+    # unmaintained notice only - no vulnerability is known - and it
+    # cannot be fixed from here until tray-icon/muda move to a gtk-rs
+    # stack that dropped the crate.
+    "RUSTSEC-2024-0370",
     # zbus_names / zvariant / zvariant_derive are unmaintained upstream while
     # the maintainers work on the next major release. They enter the tree via
     # rfd's Linux file-dialog backend only; shipped Windows builds do not

@@ -6,6 +6,22 @@ follows semver.
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: the ported tray/kill-switch code is `cfg(windows)`, so only CI's
+  windows job ever compiled it; five errors fixed - tray-icon 0.10 no
+  longer re-exports `Accelerator` in its menu module (bare `None` is
+  enough), egui 0.29 renamed `ViewportCommand::Focused` to `Focus`
+  (what bring-back-from-tray wanted all along), the tray icon decode
+  took width/height after `into_raw` moved the buffer. `cargo fmt`
+  and three editorconfig re-indents in the touched files.
+- CI: cargo-deny 0.20.2 flags `proc-macro-error` (RUSTSEC-2024-0370,
+  unmaintained) in `npvt-gui`'s graph; it enters only through
+  glib-macros 0.18 in tray-icon's Linux GTK backend, so it is ignored
+  with rationale in all four deny.toml files - same class as the
+  existing ttf-parser/zbus entries (no vulnerability, not in shipped
+  Windows builds, unfixable without a tray-icon/muda upgrade).
+
 ## [0.6.0] - 2026-11-21
 
 ### Changed
