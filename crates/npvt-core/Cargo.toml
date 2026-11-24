@@ -22,5 +22,5 @@ serde_json.workspace = true
 sha2 = "0.11"
 thiserror = "2"
 url = "2"
-x25519-dalek = { version = "2", features = ["static_secrets"] }
+x25519-dalek = { version = "3", features = ["static_secrets"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
